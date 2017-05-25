@@ -2,7 +2,6 @@ import torch.nn as nn
 from torch.autograd import Variable
 import numpy as np
 import torch
-from realnn_light.layers import Conv2dPad
 
 
 def laplace():
