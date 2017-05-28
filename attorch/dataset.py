@@ -4,22 +4,6 @@ import numpy as np
 from torch.autograd import Variable
 
 
-# class Dataset:
-#     def __init__(self, inputs, outputs):
-#         self.inputs = inputs
-#         self.outputs = outputs
-#
-#     def __repr__(self):
-#         s = ['Inputs:']
-#         for k, v in self.inputs.items():
-#             s.append('\t{}:\t{}'.format(k, ' x '.join(map(str, v.shape))))
-#
-#         s = ['Outputs:']
-#         for k, v in self.outputs.items():
-#             s.append('\t{}:\t{}'.format(k, ' x '.join(map(str, v.shape))))
-#         return '\n'.join(s)
-
-
 class NumpyDataset(Dataset):
     """Dataset wrapping data and target tensors.
     Each sample will be retrieved by indexing both tensors along the first
@@ -58,3 +42,4 @@ def to_variable(iter, **kwargs):
     """
     for elem in iter:
         yield tuple(Variable(e, **kwargs) for e in elem)
+
