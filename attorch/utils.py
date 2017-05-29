@@ -3,7 +3,7 @@ import numpy as np
 from graphviz import Digraph
 from scipy.interpolate import InterpolatedUnivariateSpline
 from torch.autograd import Variable
-
+from scipy import signal
 
 def make_dot(var):
     """from https://github.com/szagoruyko/functional-zoo/blob/master/visualize.py"""
@@ -53,3 +53,22 @@ def get_static_nonlinearity(y_hat, y):
 
     return nl
 
+def downsample(images, downsample_by=4):
+    """
+    Downsamples images in in images by a factor of downsample. Filters with a hamming filter beforehand.
+
+    Args:
+        images: an iterable containing images
+        downsample_by: downsampling factor
+
+    Returns:
+        stacked downsampled images
+
+    """
+    h = np.hamming(2 * downsample_by + 1)
+    h /= h.sum()
+    H = h[:, np.newaxis] * h[np.newaxis, :]
+
+    down = lambda img: signal.convolve2d(img.astype(np.float32), H, mode='same',
+                                         boundary='symm')[downsample_by // 2::downsample_by, downsample_by // 2::downsample_by]
+    return np.stack([down(img) for img in images], axis=0)
