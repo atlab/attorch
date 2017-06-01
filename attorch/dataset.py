@@ -21,13 +21,13 @@ class MultiTensorDataset(Dataset):
         self.data = tuple(torch.from_numpy(d.astype(np.float32)) for d in data)
 
     def __getitem__(self, index):
-        return tuple(d[index].type(self.data_dtype) for d in self.data)
+        return tuple(d[index] for d in self.data)
 
     def mean(self, axis=None):
         if axis is None:
-            return tuple(d.mean().type(self.data_dtype) for d in self.data)
+            return tuple(d.mean() for d in self.data)
         else:
-            return tuple(d.mean(axis).type(self.data_dtype) for d in self.data)
+            return tuple(d.mean(axis) for d in self.data)
 
     def __len__(self):
         return self.data[0].size(0)
@@ -62,7 +62,7 @@ class NumpyDataset:
     def __repr__(self):
         return '\n'.join(['Array {}: {}'.format(i, str(t.size())) for i, t in enumerate(self.data)])
 
-def to_variable(iter, **kwargs):
+def to_variable(iter, cuda=True, **kwargs):
     """
     Converts output of iter into Variables.
     
@@ -71,5 +71,9 @@ def to_variable(iter, **kwargs):
         **kwargs:   keyword arguments for the Variable constructor
     """
     for elem in iter:
-        yield tuple(Variable(e, **kwargs) for e in elem)
+        if cuda:
+            yield tuple(Variable(e.cuda(), **kwargs) for e in elem)
+        else:
+            yield tuple(Variable(e, **kwargs) for e in elem)
+
 

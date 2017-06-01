@@ -115,7 +115,6 @@ class SpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-
     @property
     def basis(self):
         c, w, h = self.in_shape
@@ -154,7 +153,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
 
         width = Parameter(torch.Tensor(self.outdims, 1, w, 1, components))
         height = Parameter(torch.Tensor(self.outdims, 1, 1, h, components))
-        features = Parameter(torch.Tensor(self.outdims, c, 1, 1, components))
+        features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
         self.register_parameter('width', width)
         self.register_parameter('height', height)
         self.register_parameter('features', features)
@@ -179,7 +178,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.width)
         if self.normalize:
-            return self.width / (self.width.pow(2).sum(2).sqrt().repeat(1, 1, w, 1, 1) + 1e-6)
+            return self.width / (self.width.pow(2).sum(2).sqrt().expand_as(self.width) + 1e-6)
         else:
             return self.width
 
@@ -189,25 +188,25 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.height)
         if self.normalize:
-            return self.height / (self.height.pow(2).sum(3).sqrt().repeat(1, 1, 1, h, 1) + 1e-6)
+            return self.height / (self.height.pow(2).sum(3).sqrt().expand_as(self.height) + 1e-6)
         else:
             return self.height
 
     @property
     def spatial(self):
         c, w, h = self.in_shape
-        weight = self.normalized_width.repeat(1, 1, 1, h, 1) \
-                 * self.normalized_height.repeat(1, 1, w, 1, 1)
+        n, comp = self.outdims, self.components
+        weight = self.normalized_width.expand(n, 1, w, h, comp) \
+                 * self.normalized_height.expand(n, 1, w, h, comp)
+        weight = weight.sum(4).view(n, 1, w, h)
         return weight
 
     @property
     def weight(self):
         c, w, h = self.in_shape
-
-        weight = self.normalized_width.repeat(1, c, 1, h, 1) \
-                 * self.normalized_height.repeat(1, c, w, 1, 1) \
-                 * self.features.repeat(1, 1, w, h, 1)
-        weight = weight.sum(4).view(self.outdims, -1)
+        n, comp = self.outdims, self.components
+        weight = self.spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
+        weight = weight.view(self.outdims, -1)
         return weight
 
     @property
@@ -227,5 +226,5 @@ class WidthXHeightXFeatureLinear(nn.Module):
         return ('spatial positive ' if self.positive else '') + \
                ('normalized ' if self.normalize else '') + \
                self.__class__.__name__ + \
-               ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ') rank {}'.format(
+               ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ') spatial rank {}'.format(
             self.components)
