@@ -69,17 +69,16 @@ class SpatialXFeatureLinear(nn.Module):
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.  
     """
 
-    def __init__(self, in_shape, outdims, components=1, bias=True, normalize=True, positive=False):
+    def __init__(self, in_shape, outdims, bias=True, normalize=True, positive=False):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = self.in_shape
         self.outdims = outdims
-        self.components = components
         self.normalize = normalize
         self.positive = positive
 
-        spatial = Parameter(torch.Tensor(self.outdims, 1, w, h, components))
-        features = Parameter(torch.Tensor(self.outdims, c, 1, 1, components))
+        spatial = Parameter(torch.Tensor(self.outdims, 1, w, h))
+        features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
         self.register_parameter('spatial', spatial)
         self.register_parameter('features', features)
 
@@ -92,11 +91,10 @@ class SpatialXFeatureLinear(nn.Module):
 
     @property
     def normalized_spatial(self):
-        c, w, h = self.in_shape
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sqrt().repeat(1, 1, w, h, 1) + 1e-6)
+            weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sqrt().expand_as(self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -104,21 +102,17 @@ class SpatialXFeatureLinear(nn.Module):
     @property
     def weight(self):
         c, w, h = self.in_shape
-        weight = self.normalized_spatial.repeat(1, c, 1, 1, 1) \
-                 * self.features.repeat(1, 1, w, h, 1)
-        weight = weight.sum(4).view(self.outdims, -1)
+        n, comp = self.outdims, self.components
+        weight = self.spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
+        weight = weight.view(self.outdims, -1)
         return weight
+
 
     def initialize(self, init_noise=1e-3):
         self.spatial.data.normal_(0, init_noise)
         self.features.data.normal_(0, init_noise)
         if self.bias is not None:
             self.bias.data.fill_(0)
-
-    @property
-    def basis(self):
-        c, w, h = self.in_shape
-        return self.weight.view(-1, c, w, h).data.cpu().numpy()
 
     def forward(self, x):
         N = x.size(0)
@@ -132,7 +126,7 @@ class SpatialXFeatureLinear(nn.Module):
                ('normalized ' if self.normalize else '') + \
                self.__class__.__name__ + \
                ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(
-            self.outdims) + ') rank {}'.format(self.components)
+            self.outdims) + ')'.format(self.components)
 
 
 class WidthXHeightXFeatureLinear(nn.Module):
@@ -174,7 +168,6 @@ class WidthXHeightXFeatureLinear(nn.Module):
 
     @property
     def normalized_width(self):
-        c, w, h = self.in_shape
         if self.positive:
             positive(self.width)
         if self.normalize:
