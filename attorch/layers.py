@@ -100,7 +100,7 @@ class SpatialXFeatureLinear(nn.Module):
     @property
     def weight(self):
         c, w, h = self.in_shape
-        n, comp = self.outdims, self.components
+        n = self.outdims
         weight = self.spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
         weight = weight.view(self.outdims, -1)
         return weight
