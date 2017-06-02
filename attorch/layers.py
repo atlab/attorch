@@ -69,7 +69,7 @@ class SpatialXFeatureLinear(nn.Module):
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.  
     """
 
-    def __init__(self, in_shape, outdims, bias=True, normalize=True, positive=False):
+    def __init__(self, in_shape, outdims, bias=True, normalize=True, positive=False, spatial=None):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = self.in_shape
@@ -77,10 +77,8 @@ class SpatialXFeatureLinear(nn.Module):
         self.normalize = normalize
         self.positive = positive
 
-        spatial = Parameter(torch.Tensor(self.outdims, 1, w, h))
-        features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
-        self.register_parameter('spatial', spatial)
-        self.register_parameter('features', features)
+        self.spatial = Parameter(torch.Tensor(self.outdims, 1, w, h)) if spatial is None else spatial
+        self.features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
 
         if bias:
             bias = Parameter(torch.Tensor(self.outdims))
@@ -107,7 +105,6 @@ class SpatialXFeatureLinear(nn.Module):
         weight = weight.view(self.outdims, -1)
         return weight
 
-
     def initialize(self, init_noise=1e-3):
         self.spatial.data.normal_(0, init_noise)
         self.features.data.normal_(0, init_noise)
@@ -126,7 +123,7 @@ class SpatialXFeatureLinear(nn.Module):
                ('normalized ' if self.normalize else '') + \
                self.__class__.__name__ + \
                ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(
-            self.outdims) + ')'.format(self.components)
+            self.outdims) + ')'
 
 
 class WidthXHeightXFeatureLinear(nn.Module):
@@ -135,7 +132,8 @@ class WidthXHeightXFeatureLinear(nn.Module):
     height and spatial.  
     """
 
-    def __init__(self, in_shape, outdims, components=1, bias=True, normalize=True, positive=False):
+    def __init__(self, in_shape, outdims, components=1, bias=True, normalize=True, positive=False, width=None,
+                 height=None):
         super().__init__()
         self.in_shape = in_shape
 
@@ -145,12 +143,9 @@ class WidthXHeightXFeatureLinear(nn.Module):
         self.positive = positive
         self.components = components
 
-        width = Parameter(torch.Tensor(self.outdims, 1, w, 1, components))
-        height = Parameter(torch.Tensor(self.outdims, 1, 1, h, components))
-        features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
-        self.register_parameter('width', width)
-        self.register_parameter('height', height)
-        self.register_parameter('features', features)
+        self.width = Parameter(torch.Tensor(self.outdims, 1, w, 1, components)) if width is None else width
+        self.height = Parameter(torch.Tensor(self.outdims, 1, 1, h, components)) if height is None else height
+        self.features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
 
         if bias:
             bias = Parameter(torch.Tensor(self.outdims))
