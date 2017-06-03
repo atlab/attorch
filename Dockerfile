@@ -21,5 +21,4 @@ RUN pip3 install -e /src/attorch
 
 WORKDIR /notebooks
 
-COPY ./notebooks/ /notebooks/
 
