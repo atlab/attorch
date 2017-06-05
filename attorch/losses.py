@@ -2,7 +2,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.modules.loss import _assert_no_grad
 import torch
-
+import numpy as np
 
 class PoissonLoss(nn.Module):
     def __init__(self, bias=1e-15):

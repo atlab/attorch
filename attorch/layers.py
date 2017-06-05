@@ -133,10 +133,10 @@ class WidthXHeightXFeatureLinear(nn.Module):
     """
 
     def __init__(self, in_shape, outdims, components=1, bias=True, normalize=True, positive=False, width=None,
-                 height=None):
+                 height=None, eps=1e-6):
         super().__init__()
         self.in_shape = in_shape
-
+        self.eps = eps
         c, w, h = self.in_shape
         self.outdims = outdims
         self.normalize = normalize
@@ -167,7 +167,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.width)
         if self.normalize:
-            return self.width / (self.width.pow(2).sum(2).sqrt().expand_as(self.width) + 1e-6)
+            return self.width / (self.width.pow(2).sum(2).sqrt().expand_as(self.width) + self.eps)
         else:
             return self.width
 
@@ -177,7 +177,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.height)
         if self.normalize:
-            return self.height / (self.height.pow(2).sum(3).sqrt().expand_as(self.height) + 1e-6)
+            return self.height / (self.height.pow(2).sum(3).sqrt().expand_as(self.height) + self.eps)
         else:
             return self.height
 
