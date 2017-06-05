@@ -146,7 +146,8 @@ class WidthXHeightXFeatureLinear(nn.Module):
         self.width = Parameter(torch.Tensor(self.outdims, 1, w, 1, components)) if width is None else width
         self.height = Parameter(torch.Tensor(self.outdims, 1, 1, h, components)) if height is None else height
         self.features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
-
+        assert self.width.size(4) == self.height.size(4), 'The number of components in width and height do not agree'
+        self.components = self.width.size(4)
         if bias:
             bias = Parameter(torch.Tensor(self.outdims))
             self.register_parameter('bias', bias)
