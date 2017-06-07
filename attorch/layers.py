@@ -133,10 +133,10 @@ class WidthXHeightXFeatureLinear(nn.Module):
     """
 
     def __init__(self, in_shape, outdims, components=1, bias=True, normalize=True, positive=False, width=None,
-                 height=None):
+                 height=None, eps=1e-6):
         super().__init__()
         self.in_shape = in_shape
-
+        self.eps = eps
         c, w, h = self.in_shape
         self.outdims = outdims
         self.normalize = normalize
@@ -146,7 +146,8 @@ class WidthXHeightXFeatureLinear(nn.Module):
         self.width = Parameter(torch.Tensor(self.outdims, 1, w, 1, components)) if width is None else width
         self.height = Parameter(torch.Tensor(self.outdims, 1, 1, h, components)) if height is None else height
         self.features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
-
+        assert self.width.size(4) == self.height.size(4), 'The number of components in width and height do not agree'
+        self.components = self.width.size(4)
         if bias:
             bias = Parameter(torch.Tensor(self.outdims))
             self.register_parameter('bias', bias)
@@ -166,7 +167,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.width)
         if self.normalize:
-            return self.width / (self.width.pow(2).sum(2).sqrt().expand_as(self.width) + 1e-6)
+            return self.width / (self.width.pow(2).sum(2).sqrt().expand_as(self.width) + self.eps)
         else:
             return self.width
 
@@ -176,7 +177,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.height)
         if self.normalize:
-            return self.height / (self.height.pow(2).sum(3).sqrt().expand_as(self.height) + 1e-6)
+            return self.height / (self.height.pow(2).sum(3).sqrt().expand_as(self.height) + self.eps)
         else:
             return self.height
 
