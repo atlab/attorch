@@ -40,7 +40,6 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
     model.load_state_dict(best_state_dict)
     print('Restoring best model! {:.6f} -> {:.6f}'.format(old_objective, objective(model)))
 
-def alternate(**kwargs):
-
-    for row in zip(*kwargs.items()):
+def alternate(*args):
+    for row in zip(*args):
         yield from row
