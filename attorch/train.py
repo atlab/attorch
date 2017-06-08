@@ -27,7 +27,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
         current_objective = objective(model)
 
         if current_objective * (-1) ** maximize < best_objective * (-1) ** maximize:
-            print('[{:03d}|{:02d}/{:02d}] -> {}'.format(epoch, patience_counter, patience, current_objective),
+            print('[{:03d}|{:02d}/{:02d}] ---> {}'.format(epoch, patience_counter, patience, current_objective),
                   flush=True)
             best_state_dict = deepcopy(model.state_dict())
             best_objective = current_objective
