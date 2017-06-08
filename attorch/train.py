@@ -26,14 +26,20 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
 
         current_objective = objective(model)
 
-        if current_objective * (-1)**maximize < best_objective * (-1)**maximize:
-            print('[{:03d}|{:02d}/{:02d}] -> {}'.format(epoch, patience_counter, patience, current_objective), flush=True)
+        if current_objective * (-1) ** maximize < best_objective * (-1) ** maximize:
+            print('[{:03d}|{:02d}/{:02d}] ---> {}'.format(epoch, patience_counter, patience, current_objective),
+                  flush=True)
             best_state_dict = deepcopy(model.state_dict())
             best_objective = current_objective
             patience_counter = 0
         else:
             patience_counter += 1
-            print('[{:03d}|{:02d}/{:02d}]'.format(epoch, patience_counter, patience), flush=True)
+            print('[{:03d}|{:02d}/{:02d}] -/-> {}'.format(epoch, patience_counter, patience, current_objective),
+                  flush=True)
     old_objective = objective(model)
     model.load_state_dict(best_state_dict)
-    print('Restoring best model! {:.6f} -> {:.6f}'.format(old_objective, objective(model)))
+    print('Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, objective(model)))
+
+def alternate(*args):
+    for row in zip(*args):
+        yield from row

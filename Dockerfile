@@ -12,7 +12,8 @@ RUN pip3 install  --user git+https://github.com/dunovank/jupyter-themes.git && \
 
 RUN apt-get update -y \
     && apt-get install -y graphviz \
-    && pip3 install graphviz
+    && pip3 install graphviz \
+    && pip3 install gpustat
 
 
 ADD . /src/attorch
@@ -20,5 +21,4 @@ RUN pip3 install -e /src/attorch
 
 WORKDIR /notebooks
 
-COPY ./notebooks/ /notebooks/
 
