@@ -7,7 +7,6 @@ RUN pip3 install jupyter
 
 RUN pip3 install git+https://github.com/datajoint/datajoint-python.git
 
-
 RUN apt-get update -y \
     && apt-get install -y graphviz \
     && pip3 install graphviz \

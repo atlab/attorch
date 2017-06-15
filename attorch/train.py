@@ -1,7 +1,7 @@
 from copy import deepcopy
 
 
-def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=1000, maximize=True):
+def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=1000, maximize=True, tolerance=1e-5):
     """
     Early stopping iterator. When it stops, it restores the best previous state of the model.  
     
@@ -26,7 +26,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
 
         current_objective = objective(model)
 
-        if current_objective * (-1) ** maximize < best_objective * (-1) ** maximize:
+        if current_objective * (-1) ** maximize < best_objective * (-1) ** maximize - tolerance:
             print('[{:03d}|{:02d}/{:02d}] ---> {}'.format(epoch, patience_counter, patience, current_objective),
                   flush=True)
             best_state_dict = deepcopy(model.state_dict())

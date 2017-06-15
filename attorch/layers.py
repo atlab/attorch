@@ -205,10 +205,10 @@ class WidthXHeightXFeatureLinear(nn.Module):
 
 class BiasBatchNorm2d(nn.BatchNorm2d):
     def __init__(self, features, **kwargs):
-        kwargs['affine'] = True
+        kwargs['affine'] = False
         super().__init__(features, **kwargs)
-        self.weight.requires_grad = False
+        self.bias = nn.Parameter(torch.Tensor(features))
         self.initialize()
 
     def initialize(self):
-        self.weight.data.fill_(1)
+        self.bias.data.fill_(0.)
