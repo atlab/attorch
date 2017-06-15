@@ -221,7 +221,8 @@ class WidthXHeightXFeatureLinear(nn.Module):
 
 class BiasBatchNorm2d(nn.BatchNorm2d):
     def __init__(self, features, **kwargs):
-        super().__init__(features, affine=False, **kwargs)
+        kwargs['affine'] = False
+        super().__init__(features, **kwargs)
         self.bias = nn.Parameter(torch.FloatTensor(1, features, 1, 1))
         self.initialize()
 
@@ -229,7 +230,5 @@ class BiasBatchNorm2d(nn.BatchNorm2d):
         self.bias.data.fill_(0)
 
     def forward(self, input):
-        self._check_input_dim(input)
-        return F.batch_norm(input, self.running_mean, self.running_var, weight=None, bias=None,
-                            training=self.training, momentum=self.momentum, eps=self.eps)
-        return input + self.bias.expand_as(input)
+        output = super().forward(input)
+        return output + self.bias.expand_as(output)
