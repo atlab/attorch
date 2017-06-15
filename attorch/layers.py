@@ -17,8 +17,6 @@ class Offset(nn.Module):
 
 
 class Elu1(nn.Module):
-    def __init__(self):
-        super().__init__()
 
     def forward(self, x):
         return F.elu(x) + 1.
