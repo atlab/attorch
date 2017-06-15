@@ -48,20 +48,6 @@ class Conv2dPad(nn.Conv2d):
         return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
 
-class BiasBatchNorm2d(nn.BatchNorm2d):
-    def __init__(self, features, **kwargs):
-        super().__init__(features, affine=False, **kwargs)
-        bias = nn.Parameter(torch.FloatTensor(1, features, 1, 1))
-        self.register_parameter('bias', bias)
-
-    def forward(self, input):
-        self._check_input_dim(input)
-        return F.batch_norm(input, self.running_mean, self.running_var, weight=None, bias=None,
-                            training=self.training, momentum=self.momentum, eps=self.eps)
-        N, _, w, h = input.size()
-        return input + self.bias.repeat(N, 1, w, h)
-
-
 class SpatialXFeatureLinear(nn.Module):
     """
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.  
