@@ -35,3 +35,15 @@ class LaplaceL2(nn.Module):
     def forward(self, x):
         ic, oc, k1, k2 = x.size()
         return self.laplace(x.view(ic * oc, 1, k1, k2)).pow(2).mean() / 2
+
+class LaplaceL1(nn.Module):
+    """
+    Laplace regularizer for a 2D convolutional layer.
+    """
+    def __init__(self):
+        super().__init__()
+        self.laplace = Laplace()
+
+    def forward(self, x):
+        ic, oc, k1, k2 = x.size()
+        return self.laplace(x.view(ic * oc, 1, k1, k2)).abs().mean()

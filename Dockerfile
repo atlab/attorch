@@ -8,6 +8,7 @@ RUN pip3 install jupyter
 RUN pip3 install git+https://github.com/datajoint/datajoint-python.git
 
 RUN pip3 install  --user git+https://github.com/dunovank/jupyter-themes.git && \
+        /root/.local/bin/jupyter-theme -r && \
         /root/.local/bin/jupyter-theme -cellw 1100 -fs 12 -nf opensans -tf opensans
 
 RUN apt-get update -y \
