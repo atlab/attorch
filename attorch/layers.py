@@ -8,7 +8,7 @@ from torch.nn import Parameter
 
 
 class Offset(nn.Module):
-    def __init__(self, offset=1, **kwargs):
+    def __init__(self, offset=1):
         super().__init__()
         self.offset = offset
 
