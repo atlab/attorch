@@ -210,5 +210,5 @@ class BiasBatchNorm2d(nn.BatchNorm2d):
         self.weight.requires_grad = False
         self.initialize()
 
-    def initialize(self, init_noise=None):
+    def initialize(self):
         self.weight.data.fill_(1)
