@@ -3,28 +3,6 @@ from collections import OrderedDict
 from torch import nn
 
 
-# class Module(nn.Module):
-#     def __init__(self):
-#         super().__init__()
-#         self.__dict__['_hyper'] = OrderedDict()
-#
-#     def __getattr__(self, item):
-#         if '_hyper' in self.__dict__:
-#             _hyper = self.__dict__['_hyper']
-#             if item in _hyper:
-#                 return _hyper[item]
-#         return nn.Module.__getattr__(self, item)
-#
-#     def __setattr__(self, item, value):
-#         if '_hyper' in self.__dict__:
-#             _hyper = self.__dict__['_hyper']
-#             if item in _hyper:
-#                 _hyper[item] = value
-#         return nn.Module.__setattr__(self, item, value)
-#
-#     def hyper_parameters(self):
-#         return self.__dict__['_hyper']
-
 class ModuleDict(nn.Module):
     def __init__(self, modules=None):
         super().__init__()
@@ -32,6 +10,8 @@ class ModuleDict(nn.Module):
             for k, v in modules.items():
                 if k not in self._modules:
                     self.add_module(str(k), v)
+                else:
+                    raise KeyError('{} is already in modules. Please choose a different name'.format(str(k)))
 
     def __getitem__(self, idx):
         return self._modules[str(idx)]

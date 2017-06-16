@@ -8,7 +8,7 @@ from torch.nn import Parameter
 
 
 class Offset(nn.Module):
-    def __init__(self, offset=1, **kwargs):
+    def __init__(self, offset=1):
         super().__init__()
         self.offset = offset
 
@@ -17,8 +17,6 @@ class Offset(nn.Module):
 
 
 class Elu1(nn.Module):
-    def __init__(self):
-        super().__init__()
 
     def forward(self, x):
         return F.elu(x) + 1.
@@ -48,20 +46,6 @@ class Conv2dPad(nn.Conv2d):
     def forward(self, input):
         input = self._pad(input)
         return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-
-
-class BiasBatchNorm2d(nn.BatchNorm2d):
-    def __init__(self, features, **kwargs):
-        super().__init__(features, affine=False, **kwargs)
-        bias = nn.Parameter(torch.FloatTensor(1, features, 1, 1))
-        self.register_parameter('bias', bias)
-
-    def forward(self, input):
-        self._check_input_dim(input)
-        return F.batch_norm(input, self.running_mean, self.running_var, weight=None, bias=None,
-                            training=self.training, momentum=self.momentum, eps=self.eps)
-        N, _, w, h = input.size()
-        return input + self.bias.repeat(N, 1, w, h)
 
 
 class SpatialXFeatureLinear(nn.Module):
@@ -217,3 +201,14 @@ class WidthXHeightXFeatureLinear(nn.Module):
                self.__class__.__name__ + \
                ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ') spatial rank {}'.format(
             self.components)
+
+
+class BiasBatchNorm2d(nn.BatchNorm2d):
+    def __init__(self, features, **kwargs):
+        kwargs['affine'] = False
+        super().__init__(features, **kwargs)
+        self.bias = nn.Parameter(torch.Tensor(features))
+        self.initialize()
+
+    def initialize(self):
+        self.bias.data.fill_(0.)
