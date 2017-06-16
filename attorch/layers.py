@@ -3,6 +3,7 @@ from .constraints import positive
 from torch import nn as nn
 from torch.nn import functional as F
 from torch.nn.modules.utils import _pair
+from math import ceil
 # from .module import Module
 from torch.nn import Parameter
 
@@ -212,3 +213,73 @@ class BiasBatchNorm2d(nn.BatchNorm2d):
 
     def initialize(self):
         self.bias.data.fill_(0.)
+
+
+class ExtendedConv2d(nn.Conv2d):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
+                 padding='SAME', in_shape=None, groups=1, bias=True):
+        if isinstance(kernel_size, int):
+            kernel_size = (kernel_size,) * 2
+        if isinstance(stride, int):
+            stride = (stride, ) * 2
+        if padding == 'SAME':
+            assert kernel_size[0] % 2 == 1 and kernel_size[1] % 2 == 1, "kernel must be odd sized"
+            if stride[0] == 1 and stride[1] == 1:
+                padding = (kernel_size[0]-1) // 2, (kernel_size[1]-1) // 2
+            else:
+                assert in_shape is not None, 'Input shape must be provided for stride that is not 1'
+                h = in_shape[-2]
+                w = in_shape[-1]
+
+                padding = ceil((h * (stride[0] - 1) + kernel_size[0] - 1) / 2), \
+                          ceil((w * (stride[1] - 1) + kernel_size[1] - 1) / 2)
+
+        super().__init__(in_channels, out_channels, kernel_size, stride=stride,
+                         padding=padding, groups=groups, bias=bias)
+
+
+import numpy as np
+
+
+def conv2d_config(in_shape, out_shape, kernel_size, stride=None):
+    if len(in_shape) == 4:
+        batch_size = in_shape[0]
+    else:
+        batch_size = None
+
+    in_shape = np.array(in_shape[-3:])
+    out_shape = np.array(out_shape[-3:])
+    kern_shape = np.array(kernel_size)
+
+    # determine the kind of convolution to use
+    if np.all(in_shape[-2:] >= out_shape[-2:]):
+        conv_type = "NORMAL"
+    elif np.all(in_shape[-2:] <= out_shape[-2:]):
+        conv_type = "TRANSPOSE"
+        in_shape, out_shape = out_shape, in_shape
+    else:
+        raise ValueError('Input shape dimensions must be both >= OR <= the output shape dimensions')
+
+    if stride is None:
+        stride = np.ceil((in_shape[-2:] - kern_shape + 1) / out_shape[-2:]).astype(np.int)
+    else:
+        stride = np.array(_pair(stride))
+    stride[stride <= 0] = 1
+    padding = out_shape[-2:] * stride - in_shape[-2:] + kern_shape - 1
+
+    if np.all(np.ceil(in_shape[-2:] / stride) == out_shape[-2:]):
+        padding_type = 'SAME'
+    else:
+        padding_type = 'VALID'
+
+    # get padded input shape
+    in_shape[-2:] = in_shape[-2:] + padding.astype(np.int)
+    padded_shape = in_shape.tolist()
+
+    padding = np.ceil(padding / 2).astype(np.int)
+
+    return stride.tolist(), padding.tolist(), \
+           padded_shape, conv_type, padding_type
+
+
+
