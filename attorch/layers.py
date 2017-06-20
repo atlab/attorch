@@ -3,6 +3,8 @@ from .constraints import positive
 from torch import nn as nn
 from torch.nn import functional as F
 from torch.nn.modules.utils import _pair
+import numpy as np
+from math import ceil
 # from .module import Module
 from torch.nn import Parameter
 
@@ -17,7 +19,6 @@ class Offset(nn.Module):
 
 
 class Elu1(nn.Module):
-
     def forward(self, x):
         return F.elu(x) + 1.
 
@@ -85,7 +86,7 @@ class SpatialXFeatureLinear(nn.Module):
     def weight(self):
         c, w, h = self.in_shape
         n = self.outdims
-        weight = self.spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
+        weight = self.noormalized_spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
         weight = weight.view(self.outdims, -1)
         return weight
 
@@ -212,3 +213,160 @@ class BiasBatchNorm2d(nn.BatchNorm2d):
 
     def initialize(self):
         self.bias.data.fill_(0.)
+
+
+class ExtendedConv2d(nn.Conv2d):
+    """
+    Extended 2D convolution module with fancier padding options.
+    """
+
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
+                 padding=0, in_shape=None, groups=1, bias=True):
+        kernel_size = _pair(kernel_size)
+        stride = _pair(stride)
+
+        if padding == 'SAME':
+            assert kernel_size[0] % 2 == 1 and kernel_size[1] % 2 == 1, "kernel must be odd sized"
+            if stride[0] == 1 and stride[1] == 1:
+                padding = (kernel_size[0] - 1) // 2, (kernel_size[1] - 1) // 2
+            else:
+                assert in_shape is not None, 'Input shape must be provided for stride that is not 1'
+                h = in_shape[-2]
+                w = in_shape[-1]
+
+                padding = ceil((h * (stride[0] - 1) + kernel_size[0] - 1) / 2), \
+                          ceil((w * (stride[1] - 1) + kernel_size[1] - 1) / 2)
+
+        super().__init__(in_channels, out_channels, kernel_size, stride=stride,
+                         padding=padding, groups=groups, bias=bias)
+
+
+class ConstrainedConv2d(ExtendedConv2d):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
+                 padding=0, in_shape=None, groups=1, bias=True, constrain=None):
+        super().__init__(in_channels, out_channels, kernel_size, stride=stride,
+                         padding=padding, in_shape=in_shape, groups=groups, bias=bias)
+        self.constrain_fn = constrain
+        self.constrain_cache = None
+
+    def constrain(self):
+        if self.constrain_fn is not None:
+            self.constrain_cache = self.constrain_fn(self.weight, cache=self.constrain_cache)
+
+    def forward(self, *args, **kwargs):
+        self.constrain()
+        return super().forward(*args, **kwargs)
+
+
+class ConstrainedConvTranspose2d(nn.ConvTranspose2d):
+    def __init__(self, *args, constrain=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.constrain_fn = constrain
+        self.constrain_cache = None
+
+    def constrain(self):
+        if self.constrain_fn is not None:
+            self.constrain_cache = self.constrain_fn(self.weight, cache=self.constrain_cache)
+
+    def forward(self, *args, **kwargs):
+        self.constrain()
+        return super().forward(*args, **kwargs)
+
+
+def conv2d_config(in_shape, out_shape, kernel_size, stride=None):
+    """
+    Given desired input and output tensor shapes and convolution kernel size,
+    returns configurations that can be used to construct an appropriate 2D
+    convolution operation satisfying the desired properties.
+
+    Args:
+        in_shape: shape of the input tensor. May be either [batch, channel, height, width]
+                  or [channel, height, width]
+        out_shape: shape of the output tensor. May be either [batch, channel, height, width]
+                   or [channel, height, width]
+        kernel_size: shape of the kernel. May be an integer or a pair tuple
+        stride: (OPTIONAL) desired stride to be used. If not provided, optimal stride size
+                will be computed and returned to minimize the necesssary amount of padding
+                or stripping.
+
+    Returns:
+        A tuple (stride, padding, output_padding, padded_shape, conv_type, padding_type).
+        stride: optimial stride size to be used. If stride was passed in, no change is made.
+        padding: padding to be applied to each edge
+        output_padding: if operation is transpose convolution, supplies output_padding that's
+            necessary. Otherwise, this is None.
+        conv_type: the required type of convolution. It is either "NORMAL" or "TRANSPOSE"
+        padding_type: string to indicate the type of padding. Either "VALID" or "SAME".
+
+    """
+    in_shape = np.array(in_shape[-3:])
+    out_shape = np.array(out_shape[-3:])
+    kern_shape = np.array(kernel_size)
+
+    # determine the kind of convolution to use
+    if np.all(in_shape[-2:] >= out_shape[-2:]):
+        conv_type = "NORMAL"
+    elif np.all(in_shape[-2:] <= out_shape[-2:]):
+        conv_type = "TRANSPOSE"
+        in_shape, out_shape = out_shape, in_shape
+    else:
+        raise ValueError('Input shape dimensions must be both >= OR <= the output shape dimensions')
+
+    if stride is None:
+        stride = np.ceil((in_shape[-2:] - kern_shape + 1) / (out_shape[-2:] - 1)).astype(np.int)
+    else:
+        stride = np.array(_pair(stride))
+    stride[stride <= 0] = 1
+    padding = (out_shape[-2:] - 1) * stride + kern_shape - in_shape[-2:]
+
+    if np.all(np.ceil(in_shape[-2:] / stride) == out_shape[-2:]):
+        padding_type = 'SAME'
+    else:
+        padding_type = 'VALID'
+
+    # get padded input shape
+    in_shape[-2:] = in_shape[-2:] + padding.astype(np.int)
+    padded_shape = tuple(in_shape.tolist())
+    if conv_type == "TRANSPOSE":
+        output_padding = tuple((padding % 2 != 0).astype(np.int).tolist())
+    else:
+        output_padding = None
+
+    padding = tuple(np.ceil(padding / 2).astype(np.int).tolist())
+    stride = tuple(stride.tolist())
+
+    return stride, padding, output_padding, \
+           padded_shape, conv_type, padding_type
+
+
+def get_conv(in_shape, out_shape, kernel_size, stride=None, constrain=None, **kwargs):
+    """
+    Given desired input and output tensor shapes and convolution kernel size,
+    returns a convolution operation satisfying the desired properties.
+
+    Args:
+        in_shape: shape of the input tensor. May be either [batch, channel, height, width]
+                  or [channel, height, width]
+        out_shape: shape of the output tensor. May be either [batch, channel, height, width]
+                   or [channel, height, width]
+        kernel_size: shape of the kernel. May be an integer or a pair tuple
+        stride: (OPTIONAL) desired stride to be used. If not provided, optimal stride size
+                will be computed and returned to minimize the necesssary amount of padding
+                or stripping.
+        constrain: (OPTIONAL) constrain function to be applied to the convolution filter weights
+        **kwargs: additional arguments that are passed into the underlying convolution operation
+
+    Returns:
+        A convolution module (either a nn.Conv2d subclass or nn.ConvTranspose2d subclass)
+
+    """
+    in_channels, out_channels = in_shape[-3], out_shape[-3]
+    stride, padding, output_padding, padded_shape, conv_type, padding_type = conv2d_config(in_shape, out_shape,
+                                                                                           kernel_size, stride)
+
+    if conv_type == "NORMAL":
+        return ConstrainedConv2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding,
+                                 constrain=constrain, **kwargs)
+    else:
+        return ConstrainedConvTranspose2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding,
+                                          constrain=constrain, output_padding=output_padding, **kwargs)
