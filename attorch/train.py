@@ -1,4 +1,21 @@
-from copy import deepcopy
+from collections import OrderedDict
+
+
+def copy_state(model):
+    """
+    Given PyTorch module `model`, makes a copy of the state onto CPU.
+    Args:
+        model: PyTorch module to copy state dict of
+
+    Returns:
+        A copy of state dict with all tensors allocated on the CPU
+    """
+    copy_dict = OrderedDict()
+    state_dict = model.state_dict()
+    for k, v in state_dict.items():
+        copy_dict[k] = v.cpu() if v.is_cuda else v.clone()
+
+    return copy_dict
 
 
 def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=1000, maximize=True, tolerance=1e-5):
@@ -17,7 +34,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
     epoch = start
     maximize = float(maximize)
     best_objective = current_objective = objective(model)
-    best_state_dict = deepcopy(model.state_dict())
+    best_state_dict = copy_state(model)
     patience_counter = 0
     while patience_counter < patience and epoch < max_iter:
         for _ in range(interval):
@@ -29,7 +46,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
         if current_objective * (-1) ** maximize < best_objective * (-1) ** maximize - tolerance:
             print('[{:03d}|{:02d}/{:02d}] ---> {}'.format(epoch, patience_counter, patience, current_objective),
                   flush=True)
-            best_state_dict = deepcopy(model.state_dict())
+            best_state_dict = copy_state(model)
             best_objective = current_objective
             patience_counter = 0
         else:
