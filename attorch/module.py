@@ -25,4 +25,7 @@ class ModuleDict(nn.Module):
     def __iter__(self):
         return iter(self._modules.values())
 
+    def keys(self):
+        yield from self._modules.keys()
+
 
