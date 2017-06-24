@@ -31,9 +31,17 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
         max_iter:  maximum number of iterations before the iterator terminated
         maximize:  whether the objective is maximized of minimized
     """
+    training_status = model.training
+
+    def _objective(mod):
+        mod.eval()
+        ret = objective(mod)
+        mod.train(training_status)
+        return ret
+
     epoch = start
     maximize = float(maximize)
-    best_objective = current_objective = objective(model)
+    best_objective = current_objective = _objective(model)
     best_state_dict = copy_state(model)
     patience_counter = 0
     while patience_counter < patience and epoch < max_iter:
@@ -41,7 +49,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
             epoch += 1
             yield epoch, current_objective
 
-        current_objective = objective(model)
+        current_objective = _objective(model)
 
         if current_objective * (-1) ** maximize < best_objective * (-1) ** maximize - tolerance:
             print('[{:03d}|{:02d}/{:02d}] ---> {}'.format(epoch, patience_counter, patience, current_objective),
@@ -53,9 +61,9 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
             patience_counter += 1
             print('[{:03d}|{:02d}/{:02d}] -/-> {}'.format(epoch, patience_counter, patience, current_objective),
                   flush=True)
-    old_objective = objective(model)
+    old_objective = _objective(model)
     model.load_state_dict(best_state_dict)
-    print('Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, objective(model)))
+    print('Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, _objective(model)))
 
 def alternate(*args):
     for row in zip(*args):
