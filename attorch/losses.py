@@ -32,7 +32,7 @@ class AvgCorr(nn.Module):
 
 
 class Corr(nn.Module):
-    def __init__(self, eps=1e-14):
+    def __init__(self, eps=1e-10):
         self.eps = eps
         super().__init__()
 
