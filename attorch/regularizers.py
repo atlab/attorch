@@ -3,7 +3,6 @@ from torch.autograd import Variable
 import numpy as np
 import torch
 
-
 def laplace():
     return np.array([[0.25, 0.5, 0.25], [0.5, -3.0, 0.5], [0.25, 0.5, 0.25]]).astype(np.float32)[None, None, ...]
 
@@ -14,7 +13,6 @@ class Laplace(nn.Module):
     """
     def __init__(self):
         super().__init__()
-
         self.conv = nn.Conv2d(1, 1, 3, bias=False, padding=1)
         self.conv.weight.data.copy_(torch.from_numpy(laplace()))
         self.conv.weight.requires_grad = False

@@ -5,7 +5,7 @@ import torch
 import numpy as np
 
 class PoissonLoss(nn.Module):
-    def __init__(self, bias=1e-15):
+    def __init__(self, bias=1e-12):
         super().__init__()
         self.bias = bias
 
@@ -15,7 +15,7 @@ class PoissonLoss(nn.Module):
 
 
 class AvgCorr(nn.Module):
-    def __init__(self, eps=1e-14):
+    def __init__(self, eps=1e-12):
         self.eps = eps
         super().__init__()
 
@@ -32,7 +32,7 @@ class AvgCorr(nn.Module):
 
 
 class Corr(nn.Module):
-    def __init__(self, eps=1e-14):
+    def __init__(self, eps=1e-12):
         self.eps = eps
         super().__init__()
 
@@ -48,7 +48,7 @@ class Corr(nn.Module):
         return corrs
 
 class UnnormalizedCorr(nn.Module):
-    def __init__(self, eps=1e-14):
+    def __init__(self, eps=1e-12):
         self.eps = eps
         super().__init__()
 
