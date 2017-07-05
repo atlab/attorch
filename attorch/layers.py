@@ -19,8 +19,25 @@ class Offset(nn.Module):
 
 
 class Elu1(nn.Module):
+    """
+    Elu activation function shifted by 1 to ensure that the
+    output stays positive. That is:
+
+    Elu1(x) = Elu(x) + 1
+    """
     def forward(self, x):
         return F.elu(x) + 1.
+
+
+class AdjustedElu(nn.Module):
+    """
+    Elu activation function that's adjusted to:
+    1) ensure that all outputs are positive and
+    2) f(x) = x for x >= 1
+    """
+    def forward(self, x):
+        return F.elu(x - 1.) + 1.
+
 
 
 class Conv2dPad(nn.Conv2d):
