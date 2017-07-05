@@ -33,7 +33,7 @@ class MultiTensorDataset(Dataset):
         return self.data[0].size(0)
 
     def __repr__(self):
-        return '\n'.join(['Tensor {}: {}'.format(i, str(t.size())) for i,t in enumerate(self.data)])
+        return '\n'.join(['Tensor {}: {}'.format(i, str(t.size())) for i, t in enumerate(self.data)])
 
 
 class NumpyDataset:
