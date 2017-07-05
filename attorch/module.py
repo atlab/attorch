@@ -23,10 +23,10 @@ class ModuleDict(nn.Module):
         return len(self._modules)
 
     def __iter__(self):
-        return iter(self._modules.keys())
+        return self._modules.keys()
 
     def keys(self):
-        return self._modules.keys()
+        yield from self._modules.keys()
 
 
     def items(self):
