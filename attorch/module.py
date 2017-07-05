@@ -35,5 +35,3 @@ class ModuleDict(nn.Module):
     def values(self):
         return self._modules.values()
 
-    def keys(self):
-        return self._modules.keys()
