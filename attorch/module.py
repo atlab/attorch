@@ -26,7 +26,7 @@ class ModuleDict(nn.Module):
         return self._modules.keys()
 
     def keys(self):
-        yield from self._modules.keys()
+        return self._modules.keys()
 
 
     def items(self):
