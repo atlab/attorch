@@ -77,3 +77,23 @@ def to_variable(iter, cuda=True, **kwargs):
             yield tuple(Variable(e, **kwargs) for e in elem)
 
 
+class ListDataset(Dataset):
+    """
+    Arguments:
+        *data (indexable): datasets
+    """
+
+    def __init__(self, *data):
+        for d in data:
+            assert len(d) == len(data[0]), 'datasets must have same first dimension'
+        self.data = data
+
+    def __getitem__(self, index):
+        return tuple(d[index] for d in self.data)
+
+
+    def __len__(self):
+        return len(self.data)
+
+    def __repr__(self):
+        return '\n'.join(['List  {}: {}'.format(i, str(len(t))) for i, t in enumerate(self.data)])
