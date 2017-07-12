@@ -83,14 +83,17 @@ class ListDataset(Dataset):
         *data (indexable): datasets
     """
 
-    def __init__(self, *data):
+    def __init__(self, *data, transform=None):
+        self.transform = transform
         for d in data:
             assert len(d) == len(data[0]), 'datasets must have same first dimension'
         self.data = data
 
     def __getitem__(self, index):
-        return tuple(d[index] for d in self.data)
-
+        if self.transform is not None:
+            return self.transform(tuple(d[index] for d in self.data))
+        else:
+            return tuple(d[index] for d in self.data)
 
     def __len__(self):
         return len(self.data)
