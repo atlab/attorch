@@ -75,3 +75,4 @@ def downsample(images, downsample_by=4):
                                          boundary='symm')[downsample_by // 2::downsample_by,
                        downsample_by // 2::downsample_by]
     return np.stack([down(img) for img in images], axis=0)
+
