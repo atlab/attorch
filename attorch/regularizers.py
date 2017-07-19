@@ -15,7 +15,7 @@ class Laplace(nn.Module):
         super().__init__()
         self.conv = nn.Conv2d(1, 1, 3, bias=False, padding=1)
         self.conv.weight.data.copy_(torch.from_numpy(laplace()))
-        self.conv.weight.core_requires_grad = False
+        self.conv.weight.requires_grad = False
 
 
     def forward(self, x):
