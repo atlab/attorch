@@ -1,4 +1,7 @@
 from collections import OrderedDict
+from itertools import cycle
+
+from attorch.dataset import to_variable
 
 
 def copy_state(model):
@@ -89,3 +92,21 @@ def alternate(*args):
     """
     for row in zip(*args):
         yield from row
+
+
+def cycle_datasets(trainloaders, **kwargs):
+    """
+    Cycles through datasets of train loaders.
+
+    Args:
+        trainloaders: OrderedDict with trainloaders as values
+        **kwargs: those arguments will be passed to `attorch.dataset.to_variable`
+
+    Yields:
+        readout key, input, targets
+
+    """
+    assert isinstance(trainloaders, OrderedDict), 'trainloaders must be an ordered dict'
+    for readout_key, (inputs, targets) in zip(cycle(trainloaders.keys()),
+                                                            to_variable(alternate(*trainloaders.values()), **kwargs)):
+        yield readout_key, inputs, targets

@@ -62,18 +62,47 @@ class NumpyDataset:
     def __repr__(self):
         return '\n'.join(['Array {}: {}'.format(i, str(t.size())) for i, t in enumerate(self.data)])
 
-def to_variable(iter, cuda=True, **kwargs):
+def to_variable(iter, cuda=True, filter=None, **kwargs):
     """
     Converts output of iter into Variables.
     
     Args:
-        iter:       iterator that returns tuples of tensors 
+        iter:       iterator that returns tuples of tensors
+        cuda:       whether the elements should be loaded onto the GPU
+        filter:     tuple of bools as long as the number of returned elements by iter. If filter[i] is False,
+                    the element is not converted.
         **kwargs:   keyword arguments for the Variable constructor
     """
+
     for elem in iter:
+        if filter is None:
+            filter = (True, ) if not isinstance(elem, (tuple,list)) else len(elem) * (True,)
         if cuda:
-            yield tuple(Variable(e.cuda(), **kwargs) for e in elem)
+            yield tuple(Variable(e.cuda(), **kwargs) if f else e for f, e in zip(filter, elem))
         else:
-            yield tuple(Variable(e, **kwargs) for e in elem)
+            yield tuple(Variable(e, **kwargs) if f else e for f, e in zip(filter,elem))
 
 
+class ListDataset(Dataset):
+    """
+    Arguments:
+        *data (indexable): datasets
+    """
+
+    def __init__(self, *data, transform=None):
+        self.transform = transform
+        for d in data:
+            assert len(d) == len(data[0]), 'datasets must have same first dimension'
+        self.data = data
+
+    def __getitem__(self, index):
+        if self.transform is not None:
+            return self.transform(tuple(d[index] for d in self.data))
+        else:
+            return tuple(d[index] for d in self.data)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __repr__(self):
+        return '\n'.join(['List  {}: {}'.format(i, str(len(t))) for i, t in enumerate(self.data)])
