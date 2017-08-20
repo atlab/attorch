@@ -49,6 +49,105 @@ class Conv2dPad(nn.Conv2d):
         return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
 
+class FactorizedReadout(nn.Module):
+    """
+    Example:
+    >>> from attorch.layers import FactorizedReadout
+    >>> from torch.autograd import Variable
+    >>> import torch
+    >>> f = FactorizedReadout(5, [(1,1,2,2),(3,1,1,1)], (0, 2,3))
+    >>> print(f)
+    >>> print(f.weight.size())
+    >>> v = Variable(torch.rand(10,3,7,2,2))
+    >>> f(v).size()
+    """
+    def __init__(self, outdims, in_shapes, collapse_dims, bias=True, normalize=False, positive=False):
+        super().__init__()
+        self.outdims = outdims
+        dims = len(in_shapes[0])
+        self.in_shapes = in_shapes
+        self.sum_dims = collapse_dims
+        self.normalize = normalize
+        self.positive = positive
+
+        self.components = [
+            Parameter(torch.Tensor(*in_shape, self.outdims)) for in_shape in in_shapes
+        ]
+        for comp in self.components:
+            self.register_parameter('v_({})'.format('x'.join(map(str, comp.size()))), comp)
+
+        if bias:
+            bias_shape = dims * (1,)
+            bias = Parameter(torch.Tensor(*bias_shape, self.outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+        self.initialize()
+
+    @property
+    def constrained_components(self):
+        ret = self.components
+        if self.positive:
+            for comp in ret:
+                positive(comp)
+        if self.normalize:
+            for i, w in enumerate(ret):
+                *indims, outdim = w.size()
+                dim = len(indims) * (1,) + (outdim,)  # reshape normalizer to that afterwards
+                # norm over all dimensions except the output dimension
+                sw = w.pow(2).view(-1, outdim).sum(0).sqrt().view(*dim) + 1e-6
+                ret[i] = w / sw.expand_ax(w)
+        return ret
+
+    def __repr__(self):
+        ret = 'b_({}) + '.format('x'.join(map(str, self.bias.size()))) if self.bias else ''
+        ret += 'sum_({}) T'.format(','.join(map(str, self.sum_dims)))
+        for c in self.components:
+            ret += '*v_({})'.format('x'.join(map(str, c.size())))
+
+        if self.positive:
+            ret += ' positive'
+        if self.normalize:
+            ret += ' normalized'
+        return ret
+
+    @property
+    def weight(self):
+        # maximal number of elements in each dimension
+        expand_dims = tuple(map(int, np.vstack([c.size() for c in self.components]).max(axis=0)))
+
+        # apply contraints
+        components = self.constrained_components
+        weight = components[0].expand(*expand_dims)
+        for w in components[1:]:
+            weight = weight * w.expand(*expand_dims)
+        return weight
+
+    def initialize(self, init_noise=1e-3):
+        for comp in self.components:
+            comp.data.normal_(0, init_noise)
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def forward(self, x):
+        dims = x.size()  # data dimensions
+        d = len(dims)  # number of data dimensions
+        final_dims = dims + (self.outdims,)
+        viewdims = list(range(d+1))
+        w = self.weight.unsqueeze(0).expand(*final_dims)  # add batch dimension
+        y = x.unsqueeze(d).expand(*final_dims)  # add dimension for the readout neurons
+        y = y * w
+        for sd in self.sum_dims:
+            print(viewdims, sd)
+            y = y.sum(sd + 1)  # +1 because we unsqueezed the batch dimension
+            viewdims.remove(sd+1)
+        if self.bias is not None:
+            y = y + self.bias.expand_as(y)
+        return y.view(*[s for i, s in enumerate(y.size()) if i in viewdims])
+
+
+
+
 class SpatialXFeatureLinear(nn.Module):
     """
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.  
@@ -57,11 +156,10 @@ class SpatialXFeatureLinear(nn.Module):
     def __init__(self, in_shape, outdims, bias=True, normalize=True, positive=False, spatial=None):
         super().__init__()
         self.in_shape = in_shape
-        c, w, h = self.in_shape
         self.outdims = outdims
         self.normalize = normalize
         self.positive = positive
-
+        c, w, h = in_shape
         self.spatial = Parameter(torch.Tensor(self.outdims, 1, w, h)) if spatial is None else spatial
         self.features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
 
@@ -84,7 +182,6 @@ class SpatialXFeatureLinear(nn.Module):
 
     @property
     def weight(self):
-        c, w, h = self.in_shape
         n = self.outdims
         weight = self.normalized_spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
         weight = weight.view(self.outdims, -1)
