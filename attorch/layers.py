@@ -51,6 +51,8 @@ class Conv2dPad(nn.Conv2d):
 
 class FactorizedReadout(nn.Module):
     """
+
+
     Example:
     >>> from attorch.layers import FactorizedReadout
     >>> from torch.autograd import Variable
