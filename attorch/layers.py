@@ -49,105 +49,57 @@ class Conv2dPad(nn.Conv2d):
         return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
 
-class FactorizedReadout(nn.Module):
-    """
 
-
-    Example:
-    >>> from attorch.layers import FactorizedReadout
-    >>> from torch.autograd import Variable
-    >>> import torch
-    >>> f = FactorizedReadout(5, [(1,1,2,2),(3,1,1,1)], (0, 2,3))
-    >>> print(f)
-    >>> print(f.weight.size())
-    >>> v = Variable(torch.rand(10,3,7,2,2))
-    >>> f(v).size()
-    """
-    def __init__(self, outdims, in_shapes, collapse_dims, bias=True, normalize=False, positive=False):
+class SpatialXFeatureLinear3D(nn.Module):
+    def __init__(self, outdims, in_shape, bias=True, normalize=False, positive=True, spatial=None):
         super().__init__()
+        self.in_shape = in_shape
         self.outdims = outdims
-        dims = len(in_shapes[0])
-        self.in_shapes = in_shapes
-        self.sum_dims = collapse_dims
         self.normalize = normalize
         self.positive = positive
-
-        self.components = [
-            Parameter(torch.Tensor(*in_shape, self.outdims)) for in_shape in in_shapes
-        ]
-        for comp in self.components:
-            self.register_parameter('v_({})'.format('x'.join(map(str, comp.size()))), comp)
-
+        c, t, w, h = in_shape
+        self.spatial = Parameter(torch.Tensor(self.outdims, 1, 1, w, h)) if spatial is None else spatial
+        self.features = Parameter(torch.Tensor(self.outdims, c, 1, 1, 1))
         if bias:
-            bias_shape = dims * (1,)
-            bias = Parameter(torch.Tensor(*bias_shape, self.outdims))
+            bias = Parameter(torch.Tensor(self.outdims))
             self.register_parameter('bias', bias)
         else:
             self.register_parameter('bias', None)
         self.initialize()
 
     @property
-    def constrained_components(self):
-        ret = self.components
+    def normalized_spatial(self):
         if self.positive:
-            for comp in ret:
-                positive(comp)
+            positive(self.spatial)
+            positive(self.features)
         if self.normalize:
-            for i, w in enumerate(ret):
-                *indims, outdim = w.size()
-                dim = len(indims) * (1,) + (outdim,)  # reshape normalizer to that afterwards
-                # norm over all dimensions except the output dimension
-                sw = w.pow(2).view(-1, outdim).sum(0).sqrt().view(*dim) + 1e-6
-                ret[i] = w / sw.expand_ax(w)
-        return ret
-
-    def __repr__(self):
-        ret = 'b_({}) + '.format('x'.join(map(str, self.bias.size()))) if self.bias else ''
-        ret += 'sum_({}) T'.format(','.join(map(str, self.sum_dims)))
-        for c in self.components:
-            ret += '*v_({})'.format('x'.join(map(str, c.size())))
-
-        if self.positive:
-            ret += ' positive'
-        if self.normalize:
-            ret += ' normalized'
-        return ret
+            weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sum(4).sqrt().expand(self.spatial) + 1e-6)
+        else:
+            weight = self.spatial
+        return weight
 
     @property
     def weight(self):
-        # maximal number of elements in each dimension
-        expand_dims = tuple(map(int, np.vstack([c.size() for c in self.components]).max(axis=0)))
-
-        # apply contraints
-        components = self.constrained_components
-        weight = components[0].expand(*expand_dims)
-        for w in components[1:]:
-            weight = weight * w.expand(*expand_dims)
+        n = self.outdims
+        c, _, w, h = self.in_shape
+        weight = self.normalized_spatial.expand(n, c, 1, w, h) * self.features.expand(n, c, 1, w, h)
         return weight
 
     def initialize(self, init_noise=1e-3):
-        for comp in self.components:
-            comp.data.normal_(0, init_noise)
+        self.spatial.data.normal_(0, init_noise)
+        self.features.data.normal_(0, init_noise)
         if self.bias is not None:
             self.bias.data.fill_(0)
 
     def forward(self, x):
-        dims = x.size()  # data dimensions
-        d = len(dims)  # number of data dimensions
-        final_dims = dims + (self.outdims,)
-        viewdims = list(range(d+1))
-        w = self.weight.unsqueeze(0).expand(*final_dims)  # add batch dimension
-        y = x.unsqueeze(d).expand(*final_dims)  # add dimension for the readout neurons
-        y = y * w
-        for sd in self.sum_dims:
-            print(viewdims, sd)
-            y = y.sum(sd + 1)  # +1 because we unsqueezed the batch dimension
-            viewdims.remove(sd+1)
-        if self.bias is not None:
-            y = y + self.bias.expand_as(y)
-        return y.view(*[s for i, s in enumerate(y.size()) if i in viewdims])
+        return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3)
 
-
+    def __repr__(self):
+        c, t, w, h = self.in_shape
+        return ('positive ' if self.positive else '') + \
+               ('spatially normalized ' if self.normalize else '') + \
+               self.__class__.__name__ + \
+               ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
 
 
 class SpatialXFeatureLinear(nn.Module):
@@ -185,6 +137,7 @@ class SpatialXFeatureLinear(nn.Module):
     @property
     def weight(self):
         n = self.outdims
+        c, w, h = self.in_shape
         weight = self.normalized_spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
         weight = weight.view(self.outdims, -1)
         return weight
