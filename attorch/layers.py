@@ -22,8 +22,15 @@ class Elu1(nn.Module):
     def forward(self, x):
         return F.elu(x) + 1.
 
+
 def log1exp(x):
     return torch.log(1. + torch.exp(x))
+
+
+class Log1Exp(nn.Module):
+    def forward(self, x):
+        return log1exp(x)
+
 
 class Conv2dPad(nn.Conv2d):
     """
@@ -49,7 +56,6 @@ class Conv2dPad(nn.Conv2d):
     def forward(self, input):
         input = self._pad(input)
         return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-
 
 
 class SpatialXFeatureLinear3D(nn.Module):
