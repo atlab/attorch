@@ -105,8 +105,9 @@ class SpatialXFeatureLinear3D(nn.Module):
             self.bias.data.fill_(0)
 
     def forward(self, x):
-        tmp2 = F.conv3d(x, self.constrainted_features, None)
-        return F.conv3d(tmp2, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
+        tmp = F.conv3d(x, self.constrainted_features, None)
+        tmp2 = F.conv3d(tmp, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
+        return tmp2.transpose(2, 1)
         # return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3)
 
     def __repr__(self):
