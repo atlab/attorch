@@ -100,6 +100,12 @@ class SpatialXFeatureLinear3D(nn.Module):
             self.bias.data.fill_(0)
 
     def forward(self, x):
+        # TODO: remove ==================
+        from IPython import embed
+        embed()
+        exit()
+        # ===============================
+
         return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3)
 
     def __repr__(self):
