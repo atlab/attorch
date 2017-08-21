@@ -274,6 +274,16 @@ class BiasBatchNorm2d(nn.BatchNorm2d):
     def initialize(self):
         self.bias.data.fill_(0.)
 
+class BiasBatchNorm3d(nn.BatchNorm3d):
+    def __init__(self, features, **kwargs):
+        kwargs['affine'] = False
+        super().__init__(features, **kwargs)
+        self.bias = nn.Parameter(torch.Tensor(features))
+        self.initialize()
+
+    def initialize(self):
+        self.bias.data.fill_(0.)
+
 
 class ExtendedConv2d(nn.Conv2d):
     """
