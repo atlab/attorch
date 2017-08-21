@@ -13,6 +13,19 @@ class PoissonLoss(nn.Module):
         _assert_no_grad(target)
         return (output - target * torch.log(output + self.bias)).mean()
 
+class PoissonLoss3D(nn.Module):
+    def __init__(self, bias=1e-12):
+        super().__init__()
+        self.bias = bias
+
+    def forward(self, output, target):
+        _assert_no_grad(target)
+        # TODO: remove ==================
+        from IPython import embed
+        embed()
+        exit()
+        # ===============================
+        return (output - target * torch.log(output + self.bias)).mean()
 
 class AvgCorr(nn.Module):
     def __init__(self, eps=1e-12):
