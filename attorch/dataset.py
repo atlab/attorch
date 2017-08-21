@@ -32,6 +32,15 @@ class MultiTensorDataset(Dataset):
     def __len__(self):
         return self.data[0].size(0)
 
+    def as_variables(self, **kwargs):
+        return tuple(Variable(v, **kwargs) for v in self.data)
+
+    def cuda_(self):
+        self.data = tuple(v.cuda() for v in self.data)
+
+    def cpu_(self):
+        self.data = tuple(v.cpu() for v in self.data)
+
     def __repr__(self):
         return '\n'.join(['Tensor {}: {}'.format(i, str(t.size())) for i,t in enumerate(self.data)])
 
