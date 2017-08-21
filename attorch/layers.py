@@ -22,10 +22,8 @@ class Elu1(nn.Module):
     def forward(self, x):
         return F.elu(x) + 1.
 
-class Log1Exp(nn.Module):
-    def forward(self, x):
-        return torch.log(1. + torch.exp(x))
-
+def log1exp(x):
+    return torch.log(1. + torch.exp(x))
 
 class Conv2dPad(nn.Conv2d):
     """
