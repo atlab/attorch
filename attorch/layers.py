@@ -79,7 +79,6 @@ class SpatialXFeatureLinear3D(nn.Module):
     def normalized_spatial(self):
         if self.positive:
             positive(self.spatial)
-            positive(self.features)
         if self.normalize:
             weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sum(4).sqrt().expand(self.spatial) + 1e-6)
         else:
@@ -87,10 +86,16 @@ class SpatialXFeatureLinear3D(nn.Module):
         return weight
 
     @property
+    def constrainted_features(self):
+        if self.positive:
+            positive(self.features)
+        return self.features
+
+    @property
     def weight(self):
         n = self.outdims
         c, _, w, h = self.in_shape
-        weight = self.normalized_spatial.expand(n, c, 1, w, h) * self.features.expand(n, c, 1, w, h)
+        weight = self.normalized_spatial.expand(n, c, 1, w, h) * self.constrainted_features.expand(n, c, 1, w, h)
         return weight
 
     def initialize(self, init_noise=1e-3):
@@ -100,13 +105,9 @@ class SpatialXFeatureLinear3D(nn.Module):
             self.bias.data.fill_(0)
 
     def forward(self, x):
-        # TODO: remove ==================
-        from IPython import embed
-        embed()
-        exit()
-        # ===============================
-
-        return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3)
+        tmp2 = F.conv3d(x, self.constrainted_features, None)
+        return F.conv3d(tmp2, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
+        # return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3)
 
     def __repr__(self):
         c, t, w, h = self.in_shape
