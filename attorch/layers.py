@@ -20,7 +20,7 @@ class Offset(nn.Module):
 
 class Elu1(nn.Module):
     def forward(self, x):
-        return F.elu(x) + 1.
+        return F.elu(x, inplace=True).add_(1.)
 
 
 def log1exp(x):
@@ -86,7 +86,7 @@ class SpatialXFeatureLinear3D(nn.Module):
         return weight
 
     @property
-    def constrainted_features(self):
+    def constrained_features(self):
         if self.positive:
             positive(self.features)
         return self.features
@@ -95,7 +95,7 @@ class SpatialXFeatureLinear3D(nn.Module):
     def weight(self):
         n = self.outdims
         c, _, w, h = self.in_shape
-        weight = self.normalized_spatial.expand(n, c, 1, w, h) * self.constrainted_features.expand(n, c, 1, w, h)
+        weight = self.normalized_spatial.expand(n, c, 1, w, h) * self.constrained_features.expand(n, c, 1, w, h)
         return weight
 
     def initialize(self, init_noise=1e-3):
@@ -105,7 +105,7 @@ class SpatialXFeatureLinear3D(nn.Module):
             self.bias.data.fill_(0)
 
     def forward(self, x):
-        tmp = F.conv3d(x, self.constrainted_features, None)
+        tmp = F.conv3d(x, self.constrained_features, None)
         tmp2 = F.conv3d(tmp, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
         return tmp2.transpose(2, 1)
         # return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2,1)
