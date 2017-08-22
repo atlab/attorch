@@ -75,7 +75,6 @@ class SpatialXFeatureLinear3D(nn.Module):
             self.register_parameter('bias', None)
         self.initialize()
 
-    @property
     def l1(self, average=True):
         n = self.outdims
         c, _, w, h = self.in_shape
