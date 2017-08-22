@@ -20,7 +20,7 @@ class Offset(nn.Module):
 
 class Elu1(nn.Module):
     def forward(self, x):
-        return F.elu(x, inplace=True).add_(1.)
+        return F.elu(x, inplace=True) + 1.
 
 
 def log1exp(x):
