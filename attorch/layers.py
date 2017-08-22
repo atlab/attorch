@@ -76,11 +76,14 @@ class SpatialXFeatureLinear3D(nn.Module):
         self.initialize()
 
     @property
-    def l1(self):
+    def l1(self, average=True):
         n = self.outdims
         c, _, w, h = self.in_shape
-        return (self.spatial.view(self.outdims, -1).abs().sum(1)
-                * self.features.view(self.outdims, -1).abs().sum(1)).sum() / (n * c * w * h)
+        ret = (self.spatial.view(self.outdims, -1).abs().sum(1)
+                * self.features.view(self.outdims, -1).abs().sum(1)).sum()
+        if average:
+            ret = ret/(n * c * w * h)
+        return ret
 
     @property
     def normalized_spatial(self):
