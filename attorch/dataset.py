@@ -82,7 +82,7 @@ def to_variable(iter, cuda=True, filter=None, **kwargs):
                     the element is not converted.
         **kwargs:   keyword arguments for the Variable constructor
     """
-
+    print('Enter to variable', flush=True)
     for elem in iter:
         if filter is None:
             filter = (True, ) if not isinstance(elem, (tuple,list)) else len(elem) * (True,)
@@ -90,6 +90,7 @@ def to_variable(iter, cuda=True, filter=None, **kwargs):
             yield tuple(Variable(e.cuda(), **kwargs) if f else e for f, e in zip(filter, elem))
         else:
             yield tuple(Variable(e, **kwargs) if f else e for f, e in zip(filter,elem))
+    print('Exit to variable', flush=True)
 
 
 class ListDataset(Dataset):
