@@ -118,10 +118,8 @@ class SpatialXFeatureLinear3D(nn.Module):
         tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ self.weight.view(self.outdims, -1).t()
         if self.bias is not None:
             tmp = tmp + self.bias.expand_as(tmp)
-        tmp = tmp.view(N, t, self.outdims)
-        tmp2 = F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
-        print('Aha', (tmp - tmp2).abs().max(), tmp2.abs().max(), flush=True)
-        return tmp
+        return tmp.view(N, t, self.outdims)
+        # tmp2 = F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
         # tmp = F.conv3d(x, self.constrained_features, None)
         # tmp2 = F.conv3d(tmp, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
         # return tmp2.transpose(2, 1)
