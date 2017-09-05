@@ -26,7 +26,16 @@ class Elu1(nn.Module):
     Elu1(x) = Elu(x) + 1
     """
     def forward(self, x):
-        return F.elu(x) + 1.
+        return F.elu(x, inplace=True) + 1.
+
+
+def log1exp(x):
+    return torch.log(1. + torch.exp(x))
+
+
+class Log1Exp(nn.Module):
+    def forward(self, x):
+        return log1exp(x)
 
 
 class AdjustedElu(nn.Module):
@@ -66,6 +75,81 @@ class Conv2dPad(nn.Conv2d):
         return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
 
+class SpatialXFeatureLinear3D(nn.Module):
+    def __init__(self, outdims, in_shape, bias=True, normalize=False, positive=True, spatial=None):
+        super().__init__()
+        self.in_shape = in_shape
+        self.outdims = outdims
+        self.normalize = normalize
+        self.positive = positive
+        c, t, w, h = in_shape
+        self.spatial = Parameter(torch.Tensor(self.outdims, 1, 1, w, h)) if spatial is None else spatial
+        self.features = Parameter(torch.Tensor(self.outdims, c, 1, 1, 1))
+        if bias:
+            bias = Parameter(torch.Tensor(self.outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+        self.initialize()
+
+    def l1(self, average=True):
+        n = self.outdims
+        c, _, w, h = self.in_shape
+        ret = (self.spatial.view(self.outdims, -1).abs().sum(1)
+                * self.features.view(self.outdims, -1).abs().sum(1)).sum()
+        if average:
+            ret = ret/(n * c * w * h)
+        return ret
+
+    @property
+    def normalized_spatial(self):
+        if self.positive:
+            positive(self.spatial)
+        if self.normalize:
+            weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sum(4).sqrt().expand(self.spatial) + 1e-6)
+        else:
+            weight = self.spatial
+        return weight
+
+    @property
+    def constrained_features(self):
+        if self.positive:
+            positive(self.features)
+        return self.features
+
+    @property
+    def weight(self):
+        n = self.outdims
+        c, _, w, h = self.in_shape
+        weight = self.normalized_spatial.expand(n, c, 1, w, h) * self.constrained_features.expand(n, c, 1, w, h)
+        return weight
+
+    def initialize(self, init_noise=1e-3):
+        self.spatial.data.normal_(0, init_noise)
+        self.features.data.normal_(0, init_noise)
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def forward(self, x):
+        N, c, t, w, h = x.size()
+        tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ self.weight.view(self.outdims, -1).t()
+        if self.bias is not None:
+            tmp = tmp + self.bias.expand_as(tmp)
+        return tmp.view(N, t, self.outdims)
+        # tmp2 = F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
+        # tmp = F.conv3d(x, self.constrained_features, None)
+        # tmp2 = F.conv3d(tmp, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
+        # return tmp2.transpose(2, 1)
+        # return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
+
+    def __repr__(self):
+        c, t, w, h = self.in_shape
+        return ('positive ' if self.positive else '') + \
+               ('spatially normalized ' if self.normalize else '') + \
+               self.__class__.__name__ + \
+               ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
+
+
 class SpatialXFeatureLinear(nn.Module):
     """
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.  
@@ -74,11 +158,10 @@ class SpatialXFeatureLinear(nn.Module):
     def __init__(self, in_shape, outdims, bias=True, normalize=True, positive=False, spatial=None):
         super().__init__()
         self.in_shape = in_shape
-        c, w, h = self.in_shape
         self.outdims = outdims
         self.normalize = normalize
         self.positive = positive
-
+        c, w, h = in_shape
         self.spatial = Parameter(torch.Tensor(self.outdims, 1, w, h)) if spatial is None else spatial
         self.features = Parameter(torch.Tensor(self.outdims, c, 1, 1))
 
@@ -101,8 +184,8 @@ class SpatialXFeatureLinear(nn.Module):
 
     @property
     def weight(self):
-        c, w, h = self.in_shape
         n = self.outdims
+        c, w, h = self.in_shape
         weight = self.normalized_spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
         weight = weight.view(self.outdims, -1)
         return weight
@@ -222,6 +305,17 @@ class WidthXHeightXFeatureLinear(nn.Module):
 
 
 class BiasBatchNorm2d(nn.BatchNorm2d):
+    def __init__(self, features, **kwargs):
+        kwargs['affine'] = False
+        super().__init__(features, **kwargs)
+        self.bias = nn.Parameter(torch.Tensor(features))
+        self.initialize()
+
+    def initialize(self):
+        self.bias.data.fill_(0.)
+
+
+class BiasBatchNorm3d(nn.BatchNorm3d):
     def __init__(self, features, **kwargs):
         kwargs['affine'] = False
         super().__init__(features, **kwargs)
