@@ -1,9 +1,12 @@
+import contextlib
+
 import numpy as np
 from graphviz import Digraph
 from scipy import signal
 from scipy.interpolate import InterpolatedUnivariateSpline
 from torch.autograd import Variable
-
+import torch
+import time
 
 def make_dot(var):
     """from https://github.com/szagoruyko/functional-zoo/blob/master/visualize.py"""
@@ -76,3 +79,11 @@ def downsample(images, downsample_by=4):
                        downsample_by // 2::downsample_by]
     return np.stack([down(img) for img in images], axis=0)
 
+@contextlib.contextmanager
+def timing(name):
+    torch.cuad.synchronize()
+    start_time = time.time()
+    yield
+    torch.cuda.synchronize()
+    end_time = time.time()
+    print('{} {:6.3f} seconds'.format(name, end_time-start_time))
