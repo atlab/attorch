@@ -119,10 +119,15 @@ class SpatialXFeatureLinear3D(nn.Module):
         embed()
         exit()
         # ===============================
+        w = self.weight
+        tmp = x.transpose(2, 1).contiguous().view(-1, 32 * 24 * 52) @ w.view(452, -1).t()
+        tmp = tmp.view(5, 138, 452)
+        tmp = tmp + self.bias.expand_as(tmp)
+        return tmp
         # tmp = F.conv3d(x, self.constrained_features, None)
         # tmp2 = F.conv3d(tmp, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
         # return tmp2.transpose(2, 1)
-        return F.conv3d(x, self.weight, self.bias)#.squeeze(4).squeeze(3).transpose(2, 1)
+        # return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
 
     def __repr__(self):
         c, t, w, h = self.in_shape
