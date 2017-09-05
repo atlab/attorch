@@ -114,10 +114,8 @@ class SpatialXFeatureLinear3D(nn.Module):
             self.bias.data.fill_(0)
 
     def forward(self, x):
-        w = self.weight
         N, c, t, w, h = x.size()
-
-        tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ w.view(self.outdims, -1).t()
+        tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ self.weight.view(self.outdims, -1).t()
         if self.bias is not None:
             tmp = tmp + self.bias.expand_as(tmp)
         tmp = tmp.view(N, t, self.outdims)
