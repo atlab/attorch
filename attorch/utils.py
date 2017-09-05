@@ -81,7 +81,7 @@ def downsample(images, downsample_by=4):
 
 @contextlib.contextmanager
 def timing(name):
-    torch.cuad.synchronize()
+    torch.cuda.synchronize()
     start_time = time.time()
     yield
     torch.cuda.synchronize()
