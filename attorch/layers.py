@@ -114,11 +114,6 @@ class SpatialXFeatureLinear3D(nn.Module):
             self.bias.data.fill_(0)
 
     def forward(self, x):
-        # TODO: remove ==================
-        from IPython import embed
-        embed()
-        exit()
-        # ===============================
         w = self.weight
         tmp = x.transpose(2, 1).contiguous().view(-1, 32 * 24 * 52) @ w.view(452, -1).t()
         tmp = tmp.view(5, 138, 452)
