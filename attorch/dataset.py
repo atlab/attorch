@@ -69,7 +69,7 @@ class NumpyDataset:
         return self.data[0].shape(0)
 
     def __repr__(self):
-        return '\n'.join(['Array {}: {}'.format(i, str(t.size())) for i, t in enumerate(self.data)])
+        return '\n'.join(['Array {}: {}'.format(i, str(t.shape)) for i, t in enumerate(self.data)])
 
 def to_variable(iter, cuda=True, filter=None, **kwargs):
     """
