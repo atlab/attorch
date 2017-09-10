@@ -333,7 +333,7 @@ class DivNorm3d(nn.Module):
     def forward(self, x):
         mu = x.mean(1).mean(2).mean(3).mean(4)
         y = x - mu.expand_as(x)
-        y = y / torch.sqrt(self.sigma + y)
+        y = y / torch.sqrt(self.sigma + y.pow(2).mean())
 
         if self.bias is not None:
             y = y + self.bias.expand_as(y)
