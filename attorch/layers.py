@@ -310,21 +310,25 @@ class BiasBatchNorm3d(nn.BatchNorm3d):
 
 
 class DivNorm3D(nn.Module):
-    def __init__(self, channels, sigma=0.1, bias=False, scale=False):
+    def __init__(self, num_features, sigma=0.1, bias=False, scale=False):
         super().__init__()
         self.sigma = sigma
+        self.num_features = num_features
 
         if bias:
-            b = Parameter(torch.Tensor(channels))
+            b = Parameter(torch.Tensor(num_features))
             self.register_parameter('bias', b)
         else:
             self.register_parameter('bias', None)
 
         if scale:
-            s = Parameter(torch.Tensor(channels))
+            s = Parameter(torch.Tensor(num_features))
             self.register_parameter('scale', s)
         else:
             self.register_parameter('scale', None)
+
+    def __repr__(self):
+        return ('{name}({num_features})'.format(name=self.__class__.__name__, **self.__dict__))
 
     def forward(self, x):
         mu = x.mean(1).mean(2).mean(3).mean(4)
@@ -336,6 +340,7 @@ class DivNorm3D(nn.Module):
         if self.scale is not None:
             y = y * self.scale.expand_as(y)
         return y
+
 
 class ExtendedConv2d(nn.Conv2d):
     """
