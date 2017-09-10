@@ -333,7 +333,7 @@ class DivNorm3D(nn.Module):
 
         if self.bias is not None:
             y = y + self.bias.expand_as(y)
-        if self.scale is not None
+        if self.scale is not None:
             y = y * self.scale.expand_as(y)
         return y
 
