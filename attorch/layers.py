@@ -79,9 +79,9 @@ class SpatialXFeatureLinear3D(nn.Module):
         n = self.outdims
         c, _, w, h = self.in_shape
         ret = (self.spatial.view(self.outdims, -1).abs().sum(1)
-                * self.features.view(self.outdims, -1).abs().sum(1)).sum()
+               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
         if average:
-            ret = ret/(n * c * w * h)
+            ret = ret / (n * c * w * h)
         return ret
 
     @property
@@ -307,6 +307,17 @@ class BiasBatchNorm3d(nn.BatchNorm3d):
 
     def initialize(self):
         self.bias.data.fill_(0.)
+
+
+class DivNorm3D(nn.Module):
+    def __init__(self, sigma=0.1):
+        super().__init__()
+        self.sigma = sigma
+
+    def forward(self, x):
+        mu = x.mean(2).mean(3).mean(4)
+        y = x - mu.expand_as(x)
+        return y / torch.sqrt(self.sigma + y)
 
 
 class ExtendedConv2d(nn.Conv2d):
