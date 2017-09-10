@@ -316,13 +316,13 @@ class DivNorm3d(nn.Module):
         self.num_features = num_features
 
         if bias:
-            b = Parameter(torch.Tensor(num_features))
+            b = Parameter(torch.zero(num_features))
             self.register_parameter('bias', b)
         else:
             self.register_parameter('bias', None)
 
         if scale:
-            s = Parameter(torch.Tensor(num_features))
+            s = Parameter(torch.ones(num_features))
             self.register_parameter('scale', s)
         else:
             self.register_parameter('scale', None)
