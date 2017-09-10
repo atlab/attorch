@@ -328,7 +328,7 @@ class DivNorm3d(nn.Module):
             self.register_parameter('scale', None)
 
     def __repr__(self):
-        return ('{name}({num_features})'.format(name=self.__class__.__name__, **self.__dict__))
+        return ('{name}({num_features}, sigma={sigma})'.format(name=self.__class__.__name__, **self.__dict__))
 
     def forward(self, x):
         mu = x.mean(1).mean(2).mean(3).mean(4)
