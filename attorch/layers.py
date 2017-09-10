@@ -309,7 +309,7 @@ class BiasBatchNorm3d(nn.BatchNorm3d):
         self.bias.data.fill_(0.)
 
 
-class DivNorm3D(nn.Module):
+class DivNorm3d(nn.Module):
     def __init__(self, num_features, sigma=0.1, bias=False, scale=False):
         super().__init__()
         self.sigma = sigma
