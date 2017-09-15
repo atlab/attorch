@@ -24,9 +24,8 @@ class PoissonLoss3D(nn.Module):
         return (output - target[:,lag:,:] * torch.log(output + self.bias)).mean()
 
 class MSE3D(nn.Module):
-    def __init__(self, bias=1e-12):
+    def __init__(self):
         super().__init__()
-        self.bias = bias
 
     def forward(self, output, target):
         _assert_no_grad(target)
