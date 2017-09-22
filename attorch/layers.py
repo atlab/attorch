@@ -190,10 +190,10 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         n = self.outdims
         c, w, h = self.in_shape
         # TODO: consider dividing by sigma before squaring for numeric stability
-        d = (self.cx.expand(n, c, w, h) - self.grid_x.expand(n, c, w, h)).pow(2) + \
-            (self.cy.expand(n, c, w, h) - self.grid_y.expand(n, c, w, h)).pow(2)
-        r = torch.exp(-d / self.sigma.expand(n, c, w, h).pow(2))
-        return r * self.features.expand(n, c, w, h)
+        d = (self.cx.expand(n, 1, w, h) - self.grid_x.expand(n, 1, w, h)).pow(2) + \
+            (self.cy.expand(n, 1, w, h) - self.grid_y.expand(n, 1, w, h)).pow(2)
+        r = torch.exp(-d / self.sigma.expand(n, 1, w, h).pow(2))
+        return r.expand(n, c, w, h) * self.features.expand(n, c, w, h)
 
     @property
     def weight(self):
