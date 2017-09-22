@@ -3,6 +3,7 @@ from .constraints import positive
 from torch import nn as nn
 from torch.nn import functional as F
 from torch.nn.modules.utils import _pair
+from torch.autograd import Variable
 import numpy as np
 from math import ceil
 # from .module import Module
@@ -148,6 +149,80 @@ class SpatialXFeatureLinear3D(nn.Module):
                ('spatially normalized ' if self.normalize else '') + \
                self.__class__.__name__ + \
                ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
+
+
+class GaussianSpatialXFeatureLinear(nn.Module):
+    """
+    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
+    Gaussian over spatial dimensions.
+    """
+
+    def __init__(self, in_shape, outdims, bias=True):
+        super().__init__()
+        self.in_shape = in_shape
+        c, w, h = in_shape
+        self.outdims = outdims
+
+        self.cx = Parameter(torch.Tensor(outdims, 1, 1, 1))
+        self.cy = Parameter(torch.Tensor(outdims, 1, 1, 1))
+        self.sigma = Parameter(torch.Tensor(outdims, 1, 1, 1))
+        self.features = Parameter(torch.Tensor(outdims, c, 1, 1))
+
+        grid_x = Variable(torch.arange(ceil(-w / 2.0), ceil(w / 2.0)).view(1, 1, -1, 1))
+        grid_y = Variable(torch.arange(ceil(-h / 2.0), ceil(w / 2.0)).view(1, 1, 1, -1))
+        # grids are non-parameters but needs to be maintained as persistent state
+        self.register_buffer('grid_x', grid_x)
+        self.register_buffer('grid_y', grid_y)
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+
+        self.initialize()
+
+    @property
+    def raw_weight(self):
+        n = self.outdims
+        c, w, h = self.in_shape
+        d = (self.cx.expand(n, c, w, h) - self.grid_x.expand(n, c, w, h)).pow(2) + \
+            (self.cy.expand(n, c, w, h) - self.grid_y.expand(n, c, w, h)).pow(2)
+        r = torch.exp(-d / self.sigma.expand(n, c, w, h).pow(2))
+        return r * self.features.expand(n, c, w, h)
+
+    @property
+    def weight(self):
+        return self.raw_weight.view(self.outdims, -1)
+
+    def initialize(self, init_noise=1e-3):
+        c, w, h = self.in_shape
+
+        # randomly pick centers within the spatial map
+        self.cx.data.uniform_(ceil(-w/2.0), ceil(w/2.0)-1)
+        self.cy.data.uniform_(ceil(-w/2.0), ceil(w/2.0)-1)
+
+        d = (w + h) / 2.0
+        # TODO: consider better initialization scheme
+        self.sigma.data.normal_(d, d/4).abs_()
+
+        self.features.data.normal_(0, init_noise)
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def forward(self, x):
+        N = x.size(0)
+        y = x.view(N, -1) @ self.weight.t()
+        if self.bias is not None:
+            y = y + self.bias.expand_as(y)
+        return y
+
+    def __repr__(self):
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias'
+        return r
 
 
 class SpatialXFeatureLinear(nn.Module):
