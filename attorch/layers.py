@@ -168,8 +168,11 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         self.sigma = Parameter(torch.Tensor(outdims, 1, 1, 1))
         self.features = Parameter(torch.Tensor(outdims, c, 1, 1))
 
-        grid_x = Variable(torch.arange(ceil(-w / 2.0), ceil(w / 2.0)).view(1, 1, -1, 1))
-        grid_y = Variable(torch.arange(ceil(-h / 2.0), ceil(w / 2.0)).view(1, 1, 1, -1))
+        w_edge = (w - 1) / 2.0
+        h_edge = (h - 1) / 2.0
+
+        grid_x = Variable(torch.linspace(-w_edge, w_edge, w).view(1, 1, -1, 1))
+        grid_y = Variable(torch.linspace(-h_edge, h_edge, h).view(1, 1, 1, -1))
         # grids are non-parameters but needs to be maintained as persistent state
         self.register_buffer('grid_x', grid_x)
         self.register_buffer('grid_y', grid_y)
@@ -186,6 +189,7 @@ class GaussianSpatialXFeatureLinear(nn.Module):
     def raw_weight(self):
         n = self.outdims
         c, w, h = self.in_shape
+        # TODO: consider dividing by sigma before squaring for numeric stability
         d = (self.cx.expand(n, c, w, h) - self.grid_x.expand(n, c, w, h)).pow(2) + \
             (self.cy.expand(n, c, w, h) - self.grid_y.expand(n, c, w, h)).pow(2)
         r = torch.exp(-d / self.sigma.expand(n, c, w, h).pow(2))
@@ -198,13 +202,20 @@ class GaussianSpatialXFeatureLinear(nn.Module):
     def initialize(self, init_noise=1e-3):
         c, w, h = self.in_shape
 
-        # randomly pick centers within the spatial map
-        self.cx.data.uniform_(ceil(-w/2.0), ceil(w/2.0)-1)
-        self.cy.data.uniform_(ceil(-w/2.0), ceil(w/2.0)-1)
+        x = np.linspace(0, w, 100)
+        y = np.linspace(0, h, 100)
+        xv, yv = np.meshgrid(x, y)
+        xf = xv.flatten()
+        yf = yv.flatten()
 
-        d = (w + h) / 2.0
-        # TODO: consider better initialization scheme
-        self.sigma.data.normal_(d, d/4).abs_()
+        # numerically approximate the median distance between two randomly chosen points in a rectangle
+        sigma = np.median(np.sqrt((xf - xf[:, np.newaxis]) ** 2 + (yf - yf[:, np.newaxis]) ** 2))
+
+        # randomly pick centers within the spatial map
+        self.cx.data.uniform_(-w/2.0, w/2.0)
+        self.cy.data.uniform_(-h/2.0, h/2.0)
+
+        self.sigma.data.fill_(sigma)
 
         self.features.data.normal_(0, init_noise)
         if self.bias is not None:
