@@ -171,8 +171,8 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         w_edge = (w - 1) / 2.0
         h_edge = (h - 1) / 2.0
 
-        grid_x = Variable(torch.linspace(-w_edge, w_edge, w).view(1, 1, -1, 1))
-        grid_y = Variable(torch.linspace(-h_edge, h_edge, h).view(1, 1, 1, -1))
+        grid_x = torch.linspace(-w_edge, w_edge, w).view(1, 1, -1, 1)
+        grid_y = torch.linspace(-h_edge, h_edge, h).view(1, 1, 1, -1)
         # grids are non-parameters but needs to be maintained as persistent state
         self.register_buffer('grid_x', grid_x)
         self.register_buffer('grid_y', grid_y)
@@ -189,9 +189,11 @@ class GaussianSpatialXFeatureLinear(nn.Module):
     def raw_weight(self):
         n = self.outdims
         c, w, h = self.in_shape
+        grid_x = Variable(self.grid_x)
+        grid_y = Variable(self.grid_y)
         # TODO: consider dividing by sigma before squaring for numeric stability
-        d = (self.cx.expand(n, 1, w, h) - self.grid_x.expand(n, 1, w, h)).pow(2) + \
-            (self.cy.expand(n, 1, w, h) - self.grid_y.expand(n, 1, w, h)).pow(2)
+        d = (self.cx.expand(n, 1, w, h) - grid_x.expand(n, 1, w, h)).pow(2) + \
+            (self.cy.expand(n, 1, w, h) - grid_y.expand(n, 1, w, h)).pow(2)
         r = torch.exp(-d / self.sigma.expand(n, 1, w, h).pow(2))
         return r.expand(n, c, w, h) * self.features.expand(n, c, w, h)
 
