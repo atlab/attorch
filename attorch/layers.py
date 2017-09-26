@@ -3,6 +3,7 @@ from .constraints import positive
 from torch import nn as nn
 from torch.nn import functional as F
 from torch.nn.modules.utils import _pair
+from torch.autograd import Variable
 import numpy as np
 from math import ceil
 # from .module import Module
@@ -148,6 +149,93 @@ class SpatialXFeatureLinear3D(nn.Module):
                ('spatially normalized ' if self.normalize else '') + \
                self.__class__.__name__ + \
                ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
+
+
+class GaussianSpatialXFeatureLinear(nn.Module):
+    """
+    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
+    Gaussian over spatial dimensions.
+    """
+
+    def __init__(self, in_shape, outdims, bias=True):
+        super().__init__()
+        self.in_shape = in_shape
+        c, w, h = in_shape
+        self.outdims = outdims
+
+        self.cx = Parameter(torch.Tensor(outdims, 1, 1, 1))
+        self.cy = Parameter(torch.Tensor(outdims, 1, 1, 1))
+        self.sigma = Parameter(torch.Tensor(outdims, 1, 1, 1))
+        self.features = Parameter(torch.Tensor(outdims, c, 1, 1))
+
+        w_edge = (w - 1) / 2.0
+        h_edge = (h - 1) / 2.0
+
+        grid_x = torch.linspace(-w_edge, w_edge, w).view(1, 1, -1, 1)
+        grid_y = torch.linspace(-h_edge, h_edge, h).view(1, 1, 1, -1)
+        # grids are non-parameters but needs to be maintained as persistent state
+        self.register_buffer('grid_x', grid_x)
+        self.register_buffer('grid_y', grid_y)
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+
+        self.initialize()
+
+    @property
+    def raw_weight(self):
+        n = self.outdims
+        c, w, h = self.in_shape
+        grid_x = Variable(self.grid_x)
+        grid_y = Variable(self.grid_y)
+        # TODO: consider dividing by sigma before squaring for numeric stability
+        d = (self.cx.expand(n, 1, w, h) - grid_x.expand(n, 1, w, h)).pow(2) + \
+            (self.cy.expand(n, 1, w, h) - grid_y.expand(n, 1, w, h)).pow(2)
+        r = torch.exp(-d / self.sigma.expand(n, 1, w, h).pow(2))
+        return r.expand(n, c, w, h) * self.features.expand(n, c, w, h)
+
+    @property
+    def weight(self):
+        return self.raw_weight.view(self.outdims, -1)
+
+    def initialize(self, init_noise=1e-3):
+        c, w, h = self.in_shape
+
+        x = np.linspace(0, w, 100)
+        y = np.linspace(0, h, 100)
+        xv, yv = np.meshgrid(x, y)
+        xf = xv.flatten()
+        yf = yv.flatten()
+
+        # numerically approximate the median distance between two randomly chosen points in a rectangle
+        sigma = np.median(np.sqrt((xf - xf[:, np.newaxis]) ** 2 + (yf - yf[:, np.newaxis]) ** 2))
+
+        # randomly pick centers within the spatial map
+        self.cx.data.uniform_(-w/2.0, w/2.0)
+        self.cy.data.uniform_(-h/2.0, h/2.0)
+
+        self.sigma.data.fill_(sigma)
+
+        self.features.data.normal_(0, init_noise)
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def forward(self, x):
+        N = x.size(0)
+        y = x.view(N, -1) @ self.weight.t()
+        if self.bias is not None:
+            y = y + self.bias.expand_as(y)
+        return y
+
+    def __repr__(self):
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias'
+        return r
 
 
 class SpatialXFeatureLinear(nn.Module):
