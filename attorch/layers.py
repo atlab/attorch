@@ -173,6 +173,15 @@ class SpatialXFeatureLinear(nn.Module):
         weight = weight.view(self.outdims, -1)
         return weight
 
+    def l1(self, average=True):
+        n = self.outdims
+        c, w, h = self.in_shape
+        ret = (self.normalized_spatial.view(self.outdims, -1).abs().sum(1)
+               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
+        if average:
+            ret = ret / (n * c * w * h)
+        return ret
+
     def initialize(self, init_noise=1e-3):
         self.spatial.data.normal_(0, init_noise)
         self.features.data.normal_(0, init_noise)
