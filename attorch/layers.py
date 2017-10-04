@@ -153,12 +153,12 @@ class GaussianSpatialXFeatureLinear(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, bias=True):
+    def __init__(self, in_shape, outdims, bias=True, sigma_eps=1e-3):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
-
+        self.sigma_eps = sigma_eps
         self.cx = Parameter(torch.Tensor(outdims, 1, 1, 1))
         self.cy = Parameter(torch.Tensor(outdims, 1, 1, 1))
         self.sigma = Parameter(torch.Tensor(outdims, 1, 1, 1))
@@ -181,17 +181,28 @@ class GaussianSpatialXFeatureLinear(nn.Module):
 
         self.initialize()
 
+    def constrain_sigma(self):
+        pos = self.sigma.data.ge(0).float()
+        self.sigma.data *= pos
+        self.sigma.data += (1 - pos) * self.sigma_eps
+
     @property
-    def raw_weight(self):
+    def spatial(self):
+        self.constrain_sigma()
+
         n = self.outdims
         c, w, h = self.in_shape
         grid_x = Variable(self.grid_x)
         grid_y = Variable(self.grid_y)
-        # TODO: consider dividing by sigma before squaring for numeric stability
         d = (self.cx.expand(n, 1, w, h) - grid_x.expand(n, 1, w, h)).pow(2) + \
             (self.cy.expand(n, 1, w, h) - grid_y.expand(n, 1, w, h)).pow(2)
-        r = torch.exp(-d / self.sigma.expand(n, 1, w, h).pow(2))
-        return r.expand(n, c, w, h) * self.features.expand(n, c, w, h)
+        return torch.exp(-d / self.sigma.expand(n, 1, w, h).pow(2))
+
+    @property
+    def raw_weight(self):
+        n = self.outdims
+        c, w, h = self.in_shape
+        return self.spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
 
     @property
     def weight(self):
@@ -219,6 +230,15 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
+    def sigma_l1(self, offset=0.1):
+        return (self.sigma - self.sigma_eps).abs().mean()
+
+    def feature_l1(self, average=True):
+        if average:
+            return self.features.abs().mean()
+        else:
+            return self.features.abs().sum
+
     def forward(self, x):
         N = x.size(0)
         y = x.view(N, -1) @ self.weight.t()
@@ -241,17 +261,7 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
     """
 
     def __init__(self, outdims, in_shape, bias=True):
-
         super().__init__(in_shape[:1] + in_shape[2:], outdims, bias=bias)
-
-    def sigma_l1(self, offset=0.1):
-        return (self.sigma - offset).abs().mean()
-
-    def l1(self, average=True):
-        if average:
-            return self.weight.abs().mean()
-        else:
-            return self.weight.abs().sum
 
     def forward(self, x):
         N, c, t, w, h = x.size()
@@ -259,7 +269,6 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
         if self.bias is not None:
             tmp = tmp + self.bias.expand_as(tmp)
         return tmp.view(N, t, self.outdims)
-
 
 
 class SpatialXFeatureLinear(nn.Module):
