@@ -26,6 +26,7 @@ class Elu1(nn.Module):
 
     Elu1(x) = Elu(x) + 1
     """
+
     def forward(self, x):
         return F.elu(x, inplace=True) + 1.
 
@@ -45,9 +46,9 @@ class AdjustedElu(nn.Module):
     1) ensure that all outputs are positive and
     2) f(x) = x for x >= 1
     """
+
     def forward(self, x):
         return F.elu(x - 1.) + 1.
-
 
 
 class Conv2dPad(nn.Conv2d):
@@ -137,11 +138,6 @@ class SpatialXFeatureLinear3D(nn.Module):
         if self.bias is not None:
             tmp = tmp + self.bias.expand_as(tmp)
         return tmp.view(N, t, self.outdims)
-        # tmp2 = F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
-        # tmp = F.conv3d(x, self.constrained_features, None)
-        # tmp2 = F.conv3d(tmp, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
-        # return tmp2.transpose(2, 1)
-        # return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
 
     def __repr__(self):
         c, t, w, h = self.in_shape
@@ -214,8 +210,8 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         sigma = np.median(np.sqrt((xf - xf[:, np.newaxis]) ** 2 + (yf - yf[:, np.newaxis]) ** 2))
 
         # randomly pick centers within the spatial map
-        self.cx.data.uniform_(-w/2.0, w/2.0)
-        self.cy.data.uniform_(-h/2.0, h/2.0)
+        self.cx.data.uniform_(-w / 2.0, w / 2.0)
+        self.cy.data.uniform_(-h / 2.0, h / 2.0)
 
         self.sigma.data.fill_(sigma)
 
@@ -236,6 +232,34 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             r += ' with bias'
         return r
+
+
+class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
+    """
+    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
+    Gaussian over spatial dimensions.
+    """
+
+    def __init__(self, outdims, in_shape, bias=True):
+
+        super().__init__(in_shape[:1] + in_shape[2:], outdims, bias=bias)
+
+    def sigma_l1(self, offset=0.1):
+        return (self.sigma - offset).abs().mean()
+
+    def l1(self, average=True):
+        if average:
+            return self.weight.abs().mean()
+        else:
+            return self.weight.abs().sum
+
+    def forward(self, x):
+        N, c, t, w, h = x.size()
+        tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ self.raw_weight.view(self.outdims, -1).t()
+        if self.bias is not None:
+            tmp = tmp + self.bias.expand_as(tmp)
+        return tmp.view(N, t, self.outdims)
+
 
 
 class SpatialXFeatureLinear(nn.Module):
