@@ -153,12 +153,13 @@ class GaussianSpatialXFeatureLinear(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, bias=True, sigma_eps=1e-3):
+    def __init__(self, outdims, in_shape, bias=True, sigma_scale=1.0, sigma_eps=1e-3):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.sigma_eps = sigma_eps
+        self.sigma_scale = sigma_scale
         self.cx = Parameter(torch.Tensor(outdims, 1, 1, 1))
         self.cy = Parameter(torch.Tensor(outdims, 1, 1, 1))
         self.sigma = Parameter(torch.Tensor(outdims, 1, 1, 1))
@@ -218,7 +219,7 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         yf = yv.flatten()
 
         # numerically approximate the median distance between two randomly chosen points in a rectangle
-        sigma = np.median(np.sqrt((xf - xf[:, np.newaxis]) ** 2 + (yf - yf[:, np.newaxis]) ** 2))
+        sigma = self.sigma_scale * np.median(np.sqrt((xf - xf[:, np.newaxis]) ** 2 + (yf - yf[:, np.newaxis]) ** 2))
 
         # randomly pick centers within the spatial map
         self.cx.data.uniform_(-w / 2.0, w / 2.0)
@@ -260,8 +261,8 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, outdims, in_shape, bias=True):
-        super().__init__(in_shape[:1] + in_shape[2:], outdims, bias=bias)
+    def __init__(self, outdims, in_shape, bias=True, sigma_scale=1.0):
+        super().__init__(outdims, in_shape[:1] + in_shape[2:], bias=bias, sigma_scale=sigma_scale)
 
     def forward(self, x):
         N, c, t, w, h = x.size()
