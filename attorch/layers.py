@@ -261,7 +261,7 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, bias=True, sigma_scale=1.0:
+    def __init__(self, in_shape, outdims, bias=True, sigma_scale=1.0):
         super().__init__(in_shape[:1] + in_shape[2:], outdims, bias=bias, sigma_scale=sigma_scale)
 
     def forward(self, x):
