@@ -1,8 +1,9 @@
 import torch.nn as nn
 from torch.autograd import Variable
-from torch.nn.modules.loss import _assert_no_grad
+from torch.nn.modules.loss import _assert_no_grad, BCELoss
 import torch
 import numpy as np
+
 
 class PoissonLoss(nn.Module):
     def __init__(self, bias=1e-12):
@@ -13,7 +14,8 @@ class PoissonLoss(nn.Module):
         _assert_no_grad(target)
         return (output - target * torch.log(output + self.bias)).mean()
 
-class PoissonLoss3D(nn.Module):
+
+class PoissonLoss3d(nn.Module):
     def __init__(self, bias=1e-12):
         super().__init__()
         self.bias = bias
@@ -21,7 +23,28 @@ class PoissonLoss3D(nn.Module):
     def forward(self, output, target):
         _assert_no_grad(target)
         lag = target.size(1) - output.size(1)
-        return (output - target[:,lag:,:] * torch.log(output + self.bias)).mean()
+        return (output - target[:, lag:, :] * torch.log(output + self.bias)).mean()
+
+class L1Loss3d(nn.Module):
+    def __init__(self, bias=1e-12):
+        super().__init__()
+        self.bias = bias
+
+    def forward(self, output, target):
+        _assert_no_grad(target)
+        lag = target.size(1) - output.size(1)
+        return (output - target[:, lag:, :]).abs().mean()
+
+
+class MSE3D(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, output, target):
+        _assert_no_grad(target)
+        lag = target.size(1) - output.size(1)
+        return (output - target[:, lag:, :]).pow(2).mean()
+
 
 class AvgCorr(nn.Module):
     def __init__(self, eps=1e-12):
@@ -55,6 +78,7 @@ class Corr(nn.Module):
 
         corrs = (delta_out * delta_target).mean(0) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
         return corrs
+
 
 class UnnormalizedCorr(nn.Module):
     def __init__(self, eps=1e-12):

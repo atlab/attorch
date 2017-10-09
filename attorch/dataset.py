@@ -14,14 +14,18 @@ class MultiTensorDataset(Dataset):
         data_dtype               : dtype of the tensors (for cuda conversion)
     """
 
-    def __init__(self, *data, data_dtype=None):
-        self.data_dtype = data_dtype
+    def __init__(self, *data, transform=None):
         for d in data:
             assert d.shape[0] == data[0].shape[0], 'datasets must have same first dimension'
         self.data = tuple(torch.from_numpy(d.astype(np.float32)) for d in data)
+        if transform is None:
+            transform = lambda x: x
+        self.transform = transform
 
     def __getitem__(self, index):
-        return tuple(d[index] for d in self.data)
+        ret = tuple(d[index] for d in self.data)
+        return self.transform(ret)
+
 
     def mean(self, axis=None):
         if axis is None:
@@ -69,7 +73,7 @@ class NumpyDataset:
         return self.data[0].shape(0)
 
     def __repr__(self):
-        return '\n'.join(['Array {}: {}'.format(i, str(t.size())) for i, t in enumerate(self.data)])
+        return '\n'.join(['Array {}: {}'.format(i, str(t.shape)) for i, t in enumerate(self.data)])
 
 def to_variable(iter, cuda=True, filter=None, **kwargs):
     """

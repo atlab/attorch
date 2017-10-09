@@ -26,6 +26,7 @@ class Elu1(nn.Module):
 
     Elu1(x) = Elu(x) + 1
     """
+
     def forward(self, x):
         return F.elu(x, inplace=True) + 1.
 
@@ -45,9 +46,9 @@ class AdjustedElu(nn.Module):
     1) ensure that all outputs are positive and
     2) f(x) = x for x >= 1
     """
+
     def forward(self, x):
         return F.elu(x - 1.) + 1.
-
 
 
 class Conv2dPad(nn.Conv2d):
@@ -97,9 +98,9 @@ class SpatialXFeatureLinear3D(nn.Module):
         n = self.outdims
         c, _, w, h = self.in_shape
         ret = (self.spatial.view(self.outdims, -1).abs().sum(1)
-                * self.features.view(self.outdims, -1).abs().sum(1)).sum()
+               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
         if average:
-            ret = ret/(n * c * w * h)
+            ret = ret / (n * c * w * h)
         return ret
 
     @property
@@ -137,11 +138,6 @@ class SpatialXFeatureLinear3D(nn.Module):
         if self.bias is not None:
             tmp = tmp + self.bias.expand_as(tmp)
         return tmp.view(N, t, self.outdims)
-        # tmp2 = F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
-        # tmp = F.conv3d(x, self.constrained_features, None)
-        # tmp2 = F.conv3d(tmp, self.normalized_spatial, self.bias, groups=self.outdims).squeeze(4).squeeze(3)
-        # return tmp2.transpose(2, 1)
-        # return F.conv3d(x, self.weight, self.bias).squeeze(4).squeeze(3).transpose(2, 1)
 
     def __repr__(self):
         c, t, w, h = self.in_shape
@@ -157,12 +153,12 @@ class GaussianSpatialXFeatureLinear(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, bias=True):
+    def __init__(self, in_shape, outdims, bias=True, sigma_eps=1e-3):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
-
+        self.sigma_eps = sigma_eps
         self.cx = Parameter(torch.Tensor(outdims, 1, 1, 1))
         self.cy = Parameter(torch.Tensor(outdims, 1, 1, 1))
         self.sigma = Parameter(torch.Tensor(outdims, 1, 1, 1))
@@ -185,17 +181,28 @@ class GaussianSpatialXFeatureLinear(nn.Module):
 
         self.initialize()
 
+    def constrain_sigma(self):
+        pos = self.sigma.data.ge(0).float()
+        self.sigma.data *= pos
+        self.sigma.data += (1 - pos) * self.sigma_eps
+
     @property
-    def raw_weight(self):
+    def spatial(self):
+        self.constrain_sigma()
+
         n = self.outdims
         c, w, h = self.in_shape
         grid_x = Variable(self.grid_x)
         grid_y = Variable(self.grid_y)
-        # TODO: consider dividing by sigma before squaring for numeric stability
         d = (self.cx.expand(n, 1, w, h) - grid_x.expand(n, 1, w, h)).pow(2) + \
             (self.cy.expand(n, 1, w, h) - grid_y.expand(n, 1, w, h)).pow(2)
-        r = torch.exp(-d / self.sigma.expand(n, 1, w, h).pow(2))
-        return r.expand(n, c, w, h) * self.features.expand(n, c, w, h)
+        return torch.exp(-d / self.sigma.expand(n, 1, w, h).pow(2))
+
+    @property
+    def raw_weight(self):
+        n = self.outdims
+        c, w, h = self.in_shape
+        return self.spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
 
     @property
     def weight(self):
@@ -214,14 +221,23 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         sigma = np.median(np.sqrt((xf - xf[:, np.newaxis]) ** 2 + (yf - yf[:, np.newaxis]) ** 2))
 
         # randomly pick centers within the spatial map
-        self.cx.data.uniform_(-w/2.0, w/2.0)
-        self.cy.data.uniform_(-h/2.0, h/2.0)
+        self.cx.data.uniform_(-w / 2.0, w / 2.0)
+        self.cy.data.uniform_(-h / 2.0, h / 2.0)
 
         self.sigma.data.fill_(sigma)
 
         self.features.data.normal_(0, init_noise)
         if self.bias is not None:
             self.bias.data.fill_(0)
+
+    def sigma_l1(self, offset=0.1):
+        return (self.sigma - self.sigma_eps).abs().mean()
+
+    def feature_l1(self, average=True):
+        if average:
+            return self.features.abs().mean()
+        else:
+            return self.features.abs().sum
 
     def forward(self, x):
         N = x.size(0)
@@ -236,6 +252,23 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             r += ' with bias'
         return r
+
+
+class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
+    """
+    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
+    Gaussian over spatial dimensions.
+    """
+
+    def __init__(self, outdims, in_shape, bias=True):
+        super().__init__(in_shape[:1] + in_shape[2:], outdims, bias=bias)
+
+    def forward(self, x):
+        N, c, t, w, h = x.size()
+        tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ self.raw_weight.view(self.outdims, -1).t()
+        if self.bias is not None:
+            tmp = tmp + self.bias.expand_as(tmp)
+        return tmp.view(N, t, self.outdims)
 
 
 class SpatialXFeatureLinear(nn.Module):
@@ -277,6 +310,15 @@ class SpatialXFeatureLinear(nn.Module):
         weight = self.normalized_spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
         weight = weight.view(self.outdims, -1)
         return weight
+
+    def l1(self, average=True):
+        n = self.outdims
+        c, w, h = self.in_shape
+        ret = (self.normalized_spatial.view(self.outdims, -1).abs().sum(1)
+               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
+        if average:
+            ret = ret / (n * c * w * h)
+        return ret
 
     def initialize(self, init_noise=1e-3):
         self.spatial.data.normal_(0, init_noise)
@@ -412,6 +454,39 @@ class BiasBatchNorm3d(nn.BatchNorm3d):
 
     def initialize(self):
         self.bias.data.fill_(0.)
+
+
+class DivNorm3d(nn.Module):
+    def __init__(self, num_features, sigma=0.1, bias=False, scale=False):
+        super().__init__()
+        self.sigma = sigma
+        self.num_features = num_features
+
+        if bias:
+            b = Parameter(torch.zero(num_features))
+            self.register_parameter('bias', b)
+        else:
+            self.register_parameter('bias', None)
+
+        if scale:
+            s = Parameter(torch.ones(num_features))
+            self.register_parameter('scale', s)
+        else:
+            self.register_parameter('scale', None)
+
+    def __repr__(self):
+        return ('{name}({num_features}, sigma={sigma})'.format(name=self.__class__.__name__, **self.__dict__))
+
+    def forward(self, x):
+        mu = x.mean(1).mean(2).mean(3).mean(4)
+        y = x - mu.expand_as(x)
+        y = y / torch.sqrt(self.sigma + y.pow(2).mean().expand_as(y))
+
+        if self.bias is not None:
+            y = y + self.bias.expand_as(y)
+        if self.scale is not None:
+            y = y * self.scale.expand_as(y)
+        return y
 
 
 class ExtendedConv2d(nn.Conv2d):

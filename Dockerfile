@@ -15,6 +15,8 @@ RUN apt-get update -y \
 ADD . /src/attorch
 RUN pip3 install -e /src/attorch
 
+
+
 WORKDIR /notebooks
 
 
