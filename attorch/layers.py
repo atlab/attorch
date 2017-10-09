@@ -78,7 +78,7 @@ class Conv2dPad(nn.Conv2d):
 
 
 class SpatialXFeatureLinear3D(nn.Module):
-    def __init__(self, outdims, in_shape, bias=True, normalize=False, positive=True, spatial=None):
+    def __init__(self, in_shape, outdims, bias=True, normalize=False, positive=True, spatial=None):
         super().__init__()
         self.in_shape = in_shape
         self.outdims = outdims
@@ -153,7 +153,7 @@ class GaussianSpatialXFeatureLinear(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, outdims, in_shape, bias=True, sigma_scale=1.0, sigma_eps=1e-3):
+    def __init__(self, in_shape, outdims, bias=True, sigma_scale=1.0, sigma_eps=1e-3):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
@@ -261,8 +261,8 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, outdims, in_shape, bias=True, sigma_scale=1.0):
-        super().__init__(outdims, in_shape[:1] + in_shape[2:], bias=bias, sigma_scale=sigma_scale)
+    def __init__(self, in_shape, outdims, bias=True, sigma_scale=1.0:
+        super().__init__(in_shape[:1] + in_shape[2:], outdims, bias=bias, sigma_scale=sigma_scale)
 
     def forward(self, x):
         N, c, t, w, h = x.size()
