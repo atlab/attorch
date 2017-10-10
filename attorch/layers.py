@@ -231,14 +231,23 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def sigma_l1(self, offset=0.1):
+    def sigma_l1(self):
         return (self.sigma - self.sigma_eps).abs().mean()
+        
+    def sigma_l2(self):
+        return (self.sigma - self.sigma_eps).pow(2).mean()
 
     def feature_l1(self, average=True):
         if average:
             return self.features.abs().mean()
         else:
             return self.features.abs().sum
+             
+    def weight_l1(self, average=True):
+        if average:
+            return self.weight.abs().mean()
+        else:
+            return self.weight.abs().sum
 
     def forward(self, x):
         N = x.size(0)
