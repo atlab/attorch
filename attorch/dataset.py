@@ -9,18 +9,18 @@ from torch.autograd import Variable
 
 class H5Dataset(Dataset):
     def __init__(self, filename, *data_keys, info_name=None):
-        fid = self.fid = h5py.File(filename, 'r')
+        self.fid = h5py.File(filename, 'r')
         m = None
         for key in data_keys:
-            assert key in fid, 'Could not find {} in file'.format(key)
+            assert key in self.fid, 'Could not find {} in file'.format(key)
             if m is None:
-                m = len(fid[key])
+                m = len(self.fid[key])
             else:
-                assert m == len(fid[key]), 'Length of datasets do not match'
+                assert m == len(self.fid[key]), 'Length of datasets do not match'
         self._len = m
         self.data_keys = data_keys
         if info_name is not None:
-            self.info = fid[info_name]
+            self.info = self.fid[info_name]
 
         self._transforms = defaultdict(lambda: lambda x: x)
         for d in self.data_keys:
@@ -34,7 +34,6 @@ class H5Dataset(Dataset):
         return self._len
 
     def __repr__(self):
-        print(self._transforms)
         return '\n'.join(['Tensor {}: {} {}'.format(key, self.fid[key].shape,
                                                     '(transformed)' if key in self._transforms else '')
                           for key in self.data_keys])
