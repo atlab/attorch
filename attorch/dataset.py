@@ -1,7 +1,34 @@
+import h5py
 import torch
 from torch.utils.data import Dataset
 import numpy as np
 from torch.autograd import Variable
+
+
+class H5Dataset(Dataset):
+    def __init__(self, filename, *data_keys, info_name=None):
+        fid = self.fid = h5py.File(filename, 'r')
+        m = None
+        for key in data_keys:
+            assert key in fid, 'Could not find {} in file'.format(key)
+            if m is None:
+                m = len(fid[key])
+            else:
+                assert m == len(fid[key]), 'Length of datasets do not match'
+        self._len = m
+        self.data_keys = data_keys
+        if info_name is not None:
+            self.info = fid[info_name]
+
+    def __getitem__(self, item):
+        return tuple(torch.from_numpy(self.fid[d][item]) for d in self.data_keys)
+
+    def __len__(self):
+        return self._len
+
+    def __repr__(self):
+        return '\n'.join(['Tensor {}: {}'.format(key, self.fid[key].shape) for key in self.data_keys])
+
 
 
 class MultiTensorDataset(Dataset):
@@ -25,7 +52,6 @@ class MultiTensorDataset(Dataset):
     def __getitem__(self, index):
         ret = tuple(d[index] for d in self.data)
         return self.transform(ret)
-
 
     def mean(self, axis=None):
         if axis is None:
@@ -75,6 +101,7 @@ class NumpyDataset:
     def __repr__(self):
         return '\n'.join(['Array {}: {}'.format(i, str(t.shape)) for i, t in enumerate(self.data)])
 
+
 def to_variable(iter, cuda=True, filter=None, **kwargs):
     """
     Converts output of iter into Variables.
@@ -88,11 +115,11 @@ def to_variable(iter, cuda=True, filter=None, **kwargs):
     """
     for elem in iter:
         if filter is None:
-            filter = (True, ) if not isinstance(elem, (tuple,list)) else len(elem) * (True,)
+            filter = (True,) if not isinstance(elem, (tuple, list)) else len(elem) * (True,)
         if cuda:
             yield tuple(Variable(e.cuda(), **kwargs) if f else e for f, e in zip(filter, elem))
         else:
-            yield tuple(Variable(e, **kwargs) if f else e for f, e in zip(filter,elem))
+            yield tuple(Variable(e, **kwargs) if f else e for f, e in zip(filter, elem))
 
 
 class ListDataset(Dataset):
