@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 import h5py
 import torch
 from torch.utils.data import Dataset
@@ -20,14 +22,22 @@ class H5Dataset(Dataset):
         if info_name is not None:
             self.info = fid[info_name]
 
+        self._transforms = defaultdict(lambda: lambda x: x)
+        for d in self.data_keys:
+            if hasattr(self, d + '_transform'):
+                self._transforms[d] = getattr(self, d + '_transform')
+
     def __getitem__(self, item):
-        return tuple(torch.from_numpy(self.fid[d][item]) for d in self.data_keys)
+        return tuple(torch.from_numpy(self._transforms[d](self.fid[d][item])) for d in self.data_keys)
 
     def __len__(self):
         return self._len
 
     def __repr__(self):
-        return '\n'.join(['Tensor {}: {}'.format(key, self.fid[key].shape) for key in self.data_keys])
+        print(self._transforms)
+        return '\n'.join(['Tensor {}: {} {}'.format(key, self.fid[key].shape,
+                                                    '(transformed)' if key in self._transforms else '')
+                          for key in self.data_keys])
 
 
 
