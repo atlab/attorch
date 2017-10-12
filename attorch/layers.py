@@ -204,7 +204,7 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         grid_y = Variable(self.grid_y)
         d = (self.cx.expand(n, 1, w, h) - grid_x.expand(n, 1, w, h)).pow(2) + \
             (self.cy.expand(n, 1, w, h) - grid_y.expand(n, 1, w, h)).pow(2)
-        return torch.exp(-d / self.sigma.expand(n, 1, w, h).pow(2))
+        return torch.exp(-d**2 / self.sigma.expand(n, 1, w, h).pow(2))
 
     @property
     def raw_weight(self):
@@ -257,8 +257,11 @@ class GaussianSpatialXFeatureLinear(nn.Module):
     def __repr__(self):
         r = self.__class__.__name__ + \
             ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
+        r += ' sigma scale={}'.format(self.sigma_scale)
         if self.bias is not None:
             r += ' with bias'
+
+
         return r
 
 
