@@ -19,6 +19,10 @@ class Offset(nn.Module):
         return x + self.offset
 
 
+def elu1(x):
+    return F.elu(x, inplace=True) + 1.
+
+
 class Elu1(nn.Module):
     """
     Elu activation function shifted by 1 to ensure that the
@@ -28,7 +32,9 @@ class Elu1(nn.Module):
     """
 
     def forward(self, x):
-        return F.elu(x, inplace=True) + 1.
+        return elu1(x)
+
+
 
 
 def log1exp(x):
