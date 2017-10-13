@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="5fa1e706-c9fd-4940-a6c2-c017fd4cd0c9" name="dragon" url="http://dragon.ad.bcm.edu">
+        <fileTransfer host="dragon.ad.bcm.edu" port="22" rootFolder="/home/fabee" accessType="SFTP">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" />
+          </advancedOptions>
+          <option name="port" value="22" />
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>
