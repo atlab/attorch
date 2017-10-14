@@ -134,10 +134,17 @@ class SpatialXFeatureLinear3D(nn.Module):
 
     def forward(self, x):
         N, c, t, w, h = x.size()
+        # tmp2 = x.transpose(2, 1).contiguous()
+        # tmp2 = tmp2.view(-1, w * h) @ self.normalized_spatial.view(self.outdims, -1).t()
+        # tmp2 = (tmp2.view(N*t,c,self.outdims) \
+        #         * self.constrained_features.transpose(0,1).contiguous().view(c, self.outdims).expand(N* t, c, self.outdims)).sum(1)
+
         tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ self.weight.view(self.outdims, -1).t()
         if self.bias is not None:
             tmp = tmp + self.bias.expand_as(tmp)
+            # tmp2 = tmp2 + self.bias.expand_as(tmp2)
         return tmp.view(N, t, self.outdims)
+        # return tmp2.view(N, t, self.outdims)
 
     def __repr__(self):
         c, t, w, h = self.in_shape
