@@ -247,13 +247,13 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if average:
             return self.features.abs().mean()
         else:
-            return self.features.abs().sum
+            return self.features.abs().sum()
              
     def weight_l1(self, average=True):
         if average:
             return self.weight.abs().mean()
         else:
-            return self.weight.abs().sum
+            return self.weight.abs().sum()
 
     def forward(self, x):
         N = x.size(0)
@@ -285,6 +285,64 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
         if self.bias is not None:
             tmp = tmp + self.bias.expand_as(tmp)
         return tmp.view(N, t, self.outdims)
+
+
+class FullLinear(nn.Module):
+    """
+    Fully connected linear readout from image-like input with c x w x h into a vector output
+    """
+
+    def __init__(self, in_shape, outdims, bias=True):
+        super().__init__()
+        self.in_shape = in_shape
+        self.outdims = outdims
+
+        c, w, h = in_shape
+
+        self.raw_weight = Parameter(torch.Tensor(self.outdims, c, w, h))
+
+        if bias:
+            self.bias = Parameter(torch.Tensor(self.outdims))
+        else:
+            self.register_parameter('bias', None)
+
+        self.initialize()
+
+    def initialize(self, init_noise=1e-3):
+        self.raw_weight.data.normal_(0, init_noise)
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    @property
+    def weight(self):
+        return self.raw_weight.view(self.outdims, -1)
+
+    def weight_l1(self, average=True):
+        if average:
+            return self.weight.abs().mean()
+        else:
+            return self.weight.abs().sum()
+
+    def weight_l2(self, average=True):
+        if average:
+            return self.weight.pow(2).mean()
+        else:
+            return self.weight.pow(2).sum()
+
+    def forward(self, x):
+        N = x.size(0)
+        y = x.view(N, -1) @ self.weight.t()
+        if self.bias is not None:
+            y = y + self.bias.expand_as(y)
+        return y
+
+    def __repr__(self):
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias'
+        return r
+
 
 
 class SpatialXFeatureLinear(nn.Module):
