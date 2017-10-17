@@ -76,6 +76,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
     model.load_state_dict(best_state_dict)
     print('Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, _objective(model)))
 
+
 def alternate(*args):
     """
     Given multiple iterators, returns a generator that alternatively visit one element from each iterator at a time.
@@ -107,6 +108,6 @@ def cycle_datasets(trainloaders, **kwargs):
 
     """
     assert isinstance(trainloaders, OrderedDict), 'trainloaders must be an ordered dict'
-    for readout_key, (inputs, targets) in zip(cycle(trainloaders.keys()),
-                                                            to_variable(alternate(*trainloaders.values()), **kwargs)):
-        yield readout_key, inputs, targets
+    for readout_key, *outputs in zip(cycle(trainloaders.keys()),
+                                     to_variable(alternate(*trainloaders.values()), **kwargs)):
+        yield (readout_key,) + outputs
