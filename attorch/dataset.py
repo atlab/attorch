@@ -66,7 +66,7 @@ class MultiTensorDataset(Dataset):
         if axis is None:
             return tuple(d.mean() for d in self.data)
         else:
-            return tuple(d.mean(axis) for d in self.data)
+            return tuple(d.mean(axis, keepdim=True) for d in self.data)
 
     def __len__(self):
         return self.data[0].size(0)
