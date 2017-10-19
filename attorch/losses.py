@@ -53,13 +53,13 @@ class AvgCorr(nn.Module):
 
     def forward(self, output, target):
         _assert_no_grad(target)
-        delta_out = (output - output.mean(0).expand_as(output))
-        delta_target = (target - target.mean(0).expand_as(target))
+        delta_out = (output - output.mean(0, keepdim=True).expand_as(output))
+        delta_target = (target - target.mean(0, keepdim=True).expand_as(target))
 
-        var_out = delta_out.pow(2).mean(0)
-        var_target = delta_target.pow(2).mean(0)
+        var_out = delta_out.pow(2).mean(0, keepdim=True)
+        var_target = delta_target.pow(2).mean(0, keepdim=True)
 
-        corrs = (delta_out * delta_target).mean(0) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
+        corrs = (delta_out * delta_target).mean(0, keepdim=True) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
         return corrs.mean()
 
 
@@ -70,13 +70,13 @@ class Corr(nn.Module):
 
     def forward(self, output, target):
         _assert_no_grad(target)
-        delta_out = (output - output.mean(0).expand_as(output))
-        delta_target = (target - target.mean(0).expand_as(target))
+        delta_out = (output - output.mean(0, keepdim=True).expand_as(output))
+        delta_target = (target - target.mean(0, keepdim=True).expand_as(target))
 
-        var_out = delta_out.pow(2).mean(0)
-        var_target = delta_target.pow(2).mean(0)
+        var_out = delta_out.pow(2).mean(0, keepdim=True)
+        var_target = delta_target.pow(2).mean(0, keepdim=True)
 
-        corrs = (delta_out * delta_target).mean(0) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
+        corrs = (delta_out * delta_target).mean(0, keepdim=True) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
         return corrs
 
 
@@ -87,11 +87,11 @@ class UnnormalizedCorr(nn.Module):
 
     def forward(self, output, target):
         _assert_no_grad(target)
-        delta_out = (output - output.mean(0).expand_as(output))
-        delta_target = (target - target.mean(0).expand_as(target))
+        delta_out = (output - output.mean(0, keepdim=True).expand_as(output))
+        delta_target = (target - target.mean(0, keepdim=True).expand_as(target))
 
-        var_out = delta_out.pow(2).mean(0)
-        var_target = delta_target.pow(2).mean(0)
+        var_out = delta_out.pow(2).mean(0, keepdim=True)
+        var_target = delta_target.pow(2).mean(0, keepdim=True)
 
-        corrs = (delta_out * delta_target).sum(0) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
+        corrs = (delta_out * delta_target).sum(0, keepdim=True) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
         return corrs, delta_out.size(0)
