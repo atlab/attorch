@@ -19,10 +19,6 @@ class Offset(nn.Module):
         return x + self.offset
 
 
-def elu1(x):
-    return F.elu(x, inplace=True) + 1.
-
-
 class Elu1(nn.Module):
     """
     Elu activation function shifted by 1 to ensure that the
@@ -32,9 +28,11 @@ class Elu1(nn.Module):
     """
 
     def forward(self, x):
-        return elu1(x)
+        return F.elu(x, inplace=True) + 1.
 
 
+def elu1(x):
+    return F.elu(x, inplace=True) + 1.
 
 
 def log1exp(x):
@@ -103,8 +101,8 @@ class SpatialXFeatureLinear3D(nn.Module):
     def l1(self, average=True):
         n = self.outdims
         c, _, w, h = self.in_shape
-        ret = (self.spatial.view(self.outdims, -1).abs().sum(1, keepdim=True)
-               * self.features.view(self.outdims, -1).abs().sum(1, keepdim=True)).sum()
+        ret = (self.spatial.view(self.outdims, -1).abs().sum(1)
+               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
         if average:
             ret = ret / (n * c * w * h)
         return ret
@@ -114,7 +112,7 @@ class SpatialXFeatureLinear3D(nn.Module):
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sum(4, keepdim=True).sqrt().expand(self.spatial) + 1e-6)
+            weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sum(4).sqrt().expand(self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -244,23 +242,14 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def sigma_l1(self):
+    def sigma_l1(self, offset=0.1):
         return (self.sigma - self.sigma_eps).abs().mean()
-        
-    def sigma_l2(self):
-        return (self.sigma - self.sigma_eps).pow(2).mean()
 
     def feature_l1(self, average=True):
         if average:
             return self.features.abs().mean()
         else:
-            return self.features.abs().sum()
-             
-    def weight_l1(self, average=True):
-        if average:
-            return self.weight.abs().mean()
-        else:
-            return self.weight.abs().sum()
+            return self.features.abs().sum
 
     def forward(self, x):
         N = x.size(0)
@@ -285,7 +274,7 @@ class SpatialTransformerXFeatureLinear3d(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, positive=False, bias=True):
+    def __init__(self, in_shape, outdims, positive=False, bias=True, pool=19):
         super().__init__()
         self.in_shape = in_shape
         c, t, w, h = in_shape
@@ -294,13 +283,24 @@ class SpatialTransformerXFeatureLinear3d(nn.Module):
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c, 1, outdims))
 
+        # assert not positive, 'Positive features not implemented at the moment'
+
         if bias:
             bias = Parameter(torch.Tensor(outdims))
             self.register_parameter('bias', bias)
         else:
             self.register_parameter('bias', None)
-        self.pool = 19
+        self.avg = nn.AvgPool2d(pool, padding=pool // 2, stride=1)
         self.initialize()
+
+    @property
+    def pool(self):
+        return self.avg.kernel_size
+
+    @pool.setter
+    def pool(self, p):
+        self.avg.kernel_size = p
+        self.avg.padding = p // 2
 
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
@@ -318,18 +318,9 @@ class SpatialTransformerXFeatureLinear3d(nn.Module):
     def forward(self, x, shift=None):
         N, c, t, w, h = x.size()
         y = x.contiguous().view(N, c * t, w, h)
-        pool = self.pool
-        grid = self.grid
-        if shift is not None:
-            print('Replicate and do shift')
-            # --- TODO: remove
-            from IPython import embed
-            embed()
-            exit()
-            # ----------------
-        if pool > 1:
 
-            y = F.grid_sample(F.avg_pool2d(y, pool, padding=pool // 2), self.grid.expand(N, self.outdims, 1, 2))
+        if self.pool > 1:
+            y = F.grid_sample(self.avg(y), self.grid.expand(N, self.outdims, 1, 2))
         else:
             y = F.grid_sample(y, self.grid.expand(N, self.outdims, 1, 2))
         y = y.view(N, c, t, self.outdims)
@@ -342,7 +333,8 @@ class SpatialTransformerXFeatureLinear3d(nn.Module):
         r = self.__class__.__name__ + \
             ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
-            r += ' with bias'
+            r += ' with bias\n'
+        r += '({})'.format(super().__repr__().replace('\n','\n\t'))
 
         return r
 
@@ -421,7 +413,6 @@ class FullLinear(nn.Module):
         return r
 
 
-
 class SpatialXFeatureLinear(nn.Module):
     """
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.  
@@ -449,7 +440,7 @@ class SpatialXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
+            weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sqrt().expand_as(self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -465,8 +456,8 @@ class SpatialXFeatureLinear(nn.Module):
     def l1(self, average=True):
         n = self.outdims
         c, w, h = self.in_shape
-        ret = (self.normalized_spatial.view(self.outdims, -1).abs().sum(1, keepdim=True)
-               * self.features.view(self.outdims, -1).abs().sum(1, keepdim=True)).sum()
+        ret = (self.normalized_spatial.view(self.outdims, -1).abs().sum(1)
+               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
         if average:
             ret = ret / (n * c * w * h)
         return ret
@@ -533,7 +524,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.width)
         if self.normalize:
-            return self.width / (self.width.pow(2).sum(2, keepdim=True) + self.eps).sqrt().expand_as(self.width)
+            return self.width / (self.width.pow(2).sum(2) + self.eps).sqrt().expand_as(self.width)
         else:
             return self.width
 
@@ -543,7 +534,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.height)
         if self.normalize:
-            return self.height / (self.height.pow(2).sum(3, keepdim=True) + self.eps).sqrt().expand_as(self.height)
+            return self.height / (self.height.pow(2).sum(3) + self.eps).sqrt().expand_as(self.height)
         else:
             return self.height
 
@@ -629,7 +620,7 @@ class DivNorm3d(nn.Module):
         return ('{name}({num_features}, sigma={sigma})'.format(name=self.__class__.__name__, **self.__dict__))
 
     def forward(self, x):
-        mu = x.mean(1, keepdim=True).mean(2, keepdim=True).mean(3, keepdim=True).mean(4, keepdim=True)
+        mu = x.mean(1).mean(2).mean(3).mean(4)
         y = x - mu.expand_as(x)
         y = y / torch.sqrt(self.sigma + y.pow(2).mean().expand_as(y))
 
