@@ -19,6 +19,10 @@ class Offset(nn.Module):
         return x + self.offset
 
 
+def elu1(x):
+    return F.elu(x, inplace=True) + 1.
+
+
 class Elu1(nn.Module):
     """
     Elu activation function shifted by 1 to ensure that the
@@ -28,7 +32,9 @@ class Elu1(nn.Module):
     """
 
     def forward(self, x):
-        return F.elu(x, inplace=True) + 1.
+        return elu1(x)
+
+
 
 
 def log1exp(x):
@@ -97,8 +103,8 @@ class SpatialXFeatureLinear3D(nn.Module):
     def l1(self, average=True):
         n = self.outdims
         c, _, w, h = self.in_shape
-        ret = (self.spatial.view(self.outdims, -1).abs().sum(1)
-               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
+        ret = (self.spatial.view(self.outdims, -1).abs().sum(1, keepdim=True)
+               * self.features.view(self.outdims, -1).abs().sum(1, keepdim=True)).sum()
         if average:
             ret = ret / (n * c * w * h)
         return ret
@@ -108,7 +114,7 @@ class SpatialXFeatureLinear3D(nn.Module):
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sum(4).sqrt().expand(self.spatial) + 1e-6)
+            weight = self.spatial / (self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sum(4, keepdim=True).sqrt().expand(self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -238,14 +244,23 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def sigma_l1(self, offset=0.1):
+    def sigma_l1(self):
         return (self.sigma - self.sigma_eps).abs().mean()
+        
+    def sigma_l2(self):
+        return (self.sigma - self.sigma_eps).pow(2).mean()
 
     def feature_l1(self, average=True):
         if average:
             return self.features.abs().mean()
         else:
-            return self.features.abs().sum
+            return self.features.abs().sum()
+             
+    def weight_l1(self, average=True):
+        if average:
+            return self.weight.abs().mean()
+        else:
+            return self.weight.abs().sum()
 
     def forward(self, x):
         N = x.size(0)
@@ -349,6 +364,64 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
         return tmp.view(N, t, self.outdims)
 
 
+class FullLinear(nn.Module):
+    """
+    Fully connected linear readout from image-like input with c x w x h into a vector output
+    """
+
+    def __init__(self, in_shape, outdims, bias=True):
+        super().__init__()
+        self.in_shape = in_shape
+        self.outdims = outdims
+
+        c, w, h = in_shape
+
+        self.raw_weight = Parameter(torch.Tensor(self.outdims, c, w, h))
+
+        if bias:
+            self.bias = Parameter(torch.Tensor(self.outdims))
+        else:
+            self.register_parameter('bias', None)
+
+        self.initialize()
+
+    def initialize(self, init_noise=1e-3):
+        self.raw_weight.data.normal_(0, init_noise)
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    @property
+    def weight(self):
+        return self.raw_weight.view(self.outdims, -1)
+
+    def weight_l1(self, average=True):
+        if average:
+            return self.weight.abs().mean()
+        else:
+            return self.weight.abs().sum()
+
+    def weight_l2(self, average=True):
+        if average:
+            return self.weight.pow(2).mean()
+        else:
+            return self.weight.pow(2).sum()
+
+    def forward(self, x):
+        N = x.size(0)
+        y = x.view(N, -1) @ self.weight.t()
+        if self.bias is not None:
+            y = y + self.bias.expand_as(y)
+        return y
+
+    def __repr__(self):
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias'
+        return r
+
+
+
 class SpatialXFeatureLinear(nn.Module):
     """
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.  
@@ -376,7 +449,7 @@ class SpatialXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2).sum(3).sqrt().expand_as(self.spatial) + 1e-6)
+            weight = self.spatial / (self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -392,8 +465,8 @@ class SpatialXFeatureLinear(nn.Module):
     def l1(self, average=True):
         n = self.outdims
         c, w, h = self.in_shape
-        ret = (self.normalized_spatial.view(self.outdims, -1).abs().sum(1)
-               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
+        ret = (self.normalized_spatial.view(self.outdims, -1).abs().sum(1, keepdim=True)
+               * self.features.view(self.outdims, -1).abs().sum(1, keepdim=True)).sum()
         if average:
             ret = ret / (n * c * w * h)
         return ret
@@ -460,7 +533,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.width)
         if self.normalize:
-            return self.width / (self.width.pow(2).sum(2) + self.eps).sqrt().expand_as(self.width)
+            return self.width / (self.width.pow(2).sum(2, keepdim=True) + self.eps).sqrt().expand_as(self.width)
         else:
             return self.width
 
@@ -470,7 +543,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.height)
         if self.normalize:
-            return self.height / (self.height.pow(2).sum(3) + self.eps).sqrt().expand_as(self.height)
+            return self.height / (self.height.pow(2).sum(3, keepdim=True) + self.eps).sqrt().expand_as(self.height)
         else:
             return self.height
 
@@ -556,7 +629,7 @@ class DivNorm3d(nn.Module):
         return ('{name}({num_features}, sigma={sigma})'.format(name=self.__class__.__name__, **self.__dict__))
 
     def forward(self, x):
-        mu = x.mean(1).mean(2).mean(3).mean(4)
+        mu = x.mean(1, keepdim=True).mean(2, keepdim=True).mean(3, keepdim=True).mean(4, keepdim=True)
         y = x - mu.expand_as(x)
         y = y / torch.sqrt(self.sigma + y.pow(2).mean().expand_as(y))
 
