@@ -261,6 +261,73 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             r += ' with bias'
 
+        return r
+
+
+class SpatialTransformerXFeatureLinear3d(nn.Module):
+    """
+    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
+    Gaussian over spatial dimensions.
+    """
+
+    def __init__(self, in_shape, outdims, positive=False, bias=True):
+        super().__init__()
+        self.in_shape = in_shape
+        c, t, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        self.features = Parameter(torch.Tensor(1, c, 1, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+        self.pool = 19
+        self.initialize()
+
+    def initialize(self, init_noise=1e-3):
+        # randomly pick centers within the spatial map
+        self.grid.data.uniform_(-.95, .95)
+        self.features.data.normal_(0, init_noise)
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def feature_l1(self, average=True):
+        if average:
+            return self.features.abs().mean()
+        else:
+            return self.features.abs().sum
+
+    def forward(self, x, shift=None):
+        N, c, t, w, h = x.size()
+        y = x.contiguous().view(N, c * t, w, h)
+        pool = self.pool
+        grid = self.grid
+        if shift is not None:
+            print('Replicate and do shift')
+            # --- TODO: remove
+            from IPython import embed
+            embed()
+            exit()
+            # ----------------
+        if pool > 1:
+
+            y = F.grid_sample(F.avg_pool2d(y, pool, padding=pool // 2), self.grid.expand(N, self.outdims, 1, 2))
+        else:
+            y = F.grid_sample(y, self.grid.expand(N, self.outdims, 1, 2))
+        y = y.view(N, c, t, self.outdims)
+        y = (y * self.features).sum(1)
+        if self.bias is not None:
+            y = y + self.bias
+        return y
+
+    def __repr__(self):
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias'
 
         return r
 
