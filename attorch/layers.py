@@ -303,8 +303,6 @@ class SpatialTransformerXFeature3d(nn.Module):
         self.avg.stride = p
 
     def initialize(self, init_noise=1e-3):
-        c, t, w, h = self.in_shape
-
         # randomly pick centers within the spatial map
         self.grid.data.uniform_(-.95, .95)
         self.features.data.normal_(0, init_noise)
