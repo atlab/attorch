@@ -334,7 +334,7 @@ class SpatialTransformerXFeatureLinear3d(nn.Module):
             ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
             r += ' with bias\n'
-        r += '({})'.format(super().__repr__().replace('\n','\n\t'))
+        r += '({})'.format(super().__repr__().replace('\n', '\n\t'))
 
         return r
 
@@ -360,8 +360,18 @@ class SpatialTransformerXFeatureLinear3d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
+        self.avg = nn.AvgPool2d((18, 32), stride=(12, 22))
+
         self.initialize()
 
+    @property
+    def pool(self):
+        return self.avg.kernel_size
+
+    @pool.setter
+    def pool(self, p):
+        self.avg.kernel_size = p
+        self.avg.stride = p
 
     def initialize(self, init_noise=1e-3):
         c, t, w, h = self.in_shape
@@ -380,8 +390,8 @@ class SpatialTransformerXFeatureLinear3d(nn.Module):
 
     def forward(self, x):
         N, c, t, w, h = x.size()
-
-        y = F.grid_sample(x.contiguous().view(N, c*t, w, h), self.grid.expand(N, self.outdims, 1, 2))
+        y = x.contiguous().view(N, c * t, w, h)
+        y = F.grid_sample(self.avg(y), self.grid.expand(N, self.outdims, 1, 2))
         y = y.view(N, c, t, self.outdims)
         y = (y * self.features).sum(1)
         if self.bias is not None:
@@ -394,9 +404,7 @@ class SpatialTransformerXFeatureLinear3d(nn.Module):
         if self.bias is not None:
             r += ' with bias'
 
-
         return r
-
 
 
 class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
