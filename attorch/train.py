@@ -108,6 +108,6 @@ def cycle_datasets(trainloaders, **kwargs):
 
     """
     assert isinstance(trainloaders, OrderedDict), 'trainloaders must be an ordered dict'
-    for readout_key, *outputs in zip(cycle(trainloaders.keys()),
+    for readout_key, outputs in zip(cycle(trainloaders.keys()),
                                      to_variable(alternate(*trainloaders.values()), **kwargs)):
         yield (readout_key,) + outputs

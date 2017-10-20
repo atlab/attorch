@@ -265,6 +265,66 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         return r
 
 
+class SpatialTransformerXFeatureLinear3d(nn.Module):
+    """
+    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
+    Gaussian over spatial dimensions.
+    """
+
+    def __init__(self, in_shape, outdims, positive=False, bias=True):
+        super().__init__()
+        self.in_shape = in_shape
+        c, t, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        self.features = Parameter(torch.Tensor(1, c, 1, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+
+        self.initialize()
+
+
+    def initialize(self, init_noise=1e-3):
+        c, t, w, h = self.in_shape
+
+        # randomly pick centers within the spatial map
+        self.grid.data.uniform_(-.95, .95)
+        self.features.data.normal_(0, init_noise)
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def feature_l1(self, average=True):
+        if average:
+            return self.features.abs().mean()
+        else:
+            return self.features.abs().sum
+
+    def forward(self, x):
+        N, c, t, w, h = x.size()
+
+        y = F.grid_sample(x.contiguous().view(N, c*t, w, h), self.grid.expand(N, self.outdims, 1, 2))
+        y = y.view(N, c, t, self.outdims)
+        y = (y * self.features).sum(1)
+        if self.bias is not None:
+            y = y + self.bias
+        return y
+
+    def __repr__(self):
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias'
+
+
+        return r
+
+
+
 class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
     """
     Factorized readout layer from convolution activations. For each feature layer, the readout weights are
