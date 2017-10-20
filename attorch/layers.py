@@ -324,9 +324,9 @@ class SpatialTransformerXFeature3d(nn.Module):
         for i in range(x.size(2)):
             if shift is not None:
                 y = F.grid_sample(self.avg(x[:, :, i, :, :]),
-                                  grid + shift[:, i, :][:, None, None, :])
+                                  torch.clamp(grid + shift[:, i, :][:, None, None, :], -1, 1))
             else:
-                y = F.grid_sample(self.avg(x[:, :, i, :, :]), grid)
+                y = F.grid_sample(self.avg(x[:, :, i, :, :]), torch.clamp(grid, -1, 1))
             res.append((y.squeeze(-1) * feat).sum(1, keepdim=True))
         y = torch.stack(res, 1)
         if self.bias is not None:
