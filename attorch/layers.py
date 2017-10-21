@@ -318,7 +318,8 @@ class SpatialTransformerXFeature3d(nn.Module):
     def forward(self, x, shift=None):
         N, c, t, w, h = x.size()
         grid = self.grid.expand(N, self.outdims, 1, 2)
-
+        # if shift is not None:
+        #     print(shift.mean(0).mean(0).cpu().data.numpy(), shift.mean(0).mean(0).cpu().data.numpy())
         res = []
         feat = self.features.view(1, c, self.outdims)
         for i in range(x.size(2)):
