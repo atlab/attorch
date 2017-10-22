@@ -112,7 +112,9 @@ class SpatialXFeatureLinear3D(nn.Module):
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sum(4, keepdim=True).sqrt().expand(self.spatial) + 1e-6)
+            weight = self.spatial / (
+                self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sum(4, keepdim=True).sqrt().expand(
+                    self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -304,7 +306,7 @@ class SpatialTransformerXFeature3d(nn.Module):
 
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
-        self.grid.data.uniform_(-.95, .95)
+        self.grid.data.uniform_(-.05, .05)
         self.features.data.normal_(0, init_noise)
         if self.bias is not None:
             self.bias.data.fill_(0)
@@ -317,18 +319,18 @@ class SpatialTransformerXFeature3d(nn.Module):
 
     def forward(self, x, shift=None):
         N, c, t, w, h = x.size()
-        grid = self.grid.expand(N, self.outdims, 1, 2)
-
-        res = []
         feat = self.features.view(1, c, self.outdims)
-        for i in range(x.size(2)):
-            if shift is not None:
-                y = F.grid_sample(self.avg(x[:, :, i, :, :]),
-                                  torch.clamp(grid + shift[:, i, :][:, None, None, :], -1, 1))
-            else:
-                y = F.grid_sample(self.avg(x[:, :, i, :, :]), torch.clamp(grid, -1, 1))
-            res.append((y.squeeze(-1) * feat).sum(1, keepdim=True))
-        y = torch.stack(res, 1)
+
+        if shift is None:
+            grid = self.grid.expand(N * t, self.outdims, 1, 2)
+        else:
+            grid = self.grid.expand(N, self.outdims, 1, 2)
+            grid = torch.stack([torch.clamp(grid + shift[:, i, :][:, None, None, :], -1, 1) for i in range(t)], 1)
+            grid = grid.contiguous().view(-1, self.outdims, 1, 2)
+        z = self.avg(x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h))
+        y = F.grid_sample(z, grid)
+        y = (y.squeeze(-1) * feat).sum(1).view(N, t, self.outdims)
+
         if self.bias is not None:
             y = y + self.bias
         return y
@@ -443,7 +445,8 @@ class SpatialXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
+            weight = self.spatial / (
+                self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
