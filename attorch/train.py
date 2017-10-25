@@ -22,7 +22,7 @@ def copy_state(model):
 
 
 def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=1000, maximize=True, tolerance=1e-5,
-                   switch_mode=True):
+                   switch_mode=True, restore_best=True):
     """
     Early stopping iterator. When it stops, it restores the best previous state of the model.  
     
@@ -73,8 +73,11 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
             print('[{:03d}|{:02d}/{:02d}] -/-> {}'.format(epoch, patience_counter, patience, current_objective),
                   flush=True)
     old_objective = _objective(model)
-    model.load_state_dict(best_state_dict)
-    print('Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, _objective(model)))
+    if restore_best:
+        model.load_state_dict(best_state_dict)
+        print('Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, _objective(model)))
+    else:
+        print('Final best model! objective {:.6f}'.format(_objective(model)))
 
 
 def alternate(*args):
