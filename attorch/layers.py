@@ -10,6 +10,7 @@ from math import ceil
 from torch.nn import Parameter
 from torch.nn.init import xavier_normal
 
+
 class Offset(nn.Module):
     def __init__(self, offset=1):
         super().__init__()
@@ -309,11 +310,14 @@ class SpatialTransformerXFeature3d(nn.Module):
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
         self.grid.data.uniform_(-.05, .05)
-        self.features.data.normal_(0, init_noise)
+        self.features.data.fill_(1 / self.in_shape[0])
         xavier_normal(self.filter.weight.data)
 
         if self.bias is not None:
             self.bias.data.fill_(0)
+
+    def filter_l1(self):
+        return self.filter.weight.abs().mean()
 
     def feature_l1(self, average=True):
         if average:
@@ -341,8 +345,9 @@ class SpatialTransformerXFeature3d(nn.Module):
         return y
 
     def __repr__(self):
+        c, _, w, h = self.in_shape
         r = self.__class__.__name__ + \
-            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
+            ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
             r += ' with bias\n'
         for ch in self.children():
