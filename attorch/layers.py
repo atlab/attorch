@@ -8,7 +8,7 @@ import numpy as np
 from math import ceil
 # from .module import Module
 from torch.nn import Parameter
-
+from torch.nn.init import xavier_normal
 
 class Offset(nn.Module):
     def __init__(self, offset=1):
@@ -276,7 +276,7 @@ class SpatialTransformerXFeature3d(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, positive=False, bias=True):
+    def __init__(self, in_shape, outdims, spatial_kern=3, positive=False, bias=True):
         super().__init__()
         self.in_shape = in_shape
         c, t, w, h = in_shape
@@ -293,6 +293,8 @@ class SpatialTransformerXFeature3d(nn.Module):
 
         self.avg = nn.AvgPool2d((1, 1), stride=(1, 1))
 
+        assert spatial_kern % 2 == 1, 'spatial_kern must be odd sized'
+        self.filter = nn.Conv2d(c, c, spatial_kern, padding=spatial_kern // 2, groups=c, bias=False)
         self.initialize()
 
     @property
@@ -308,6 +310,8 @@ class SpatialTransformerXFeature3d(nn.Module):
         # randomly pick centers within the spatial map
         self.grid.data.uniform_(-.05, .05)
         self.features.data.normal_(0, init_noise)
+        xavier_normal(self.filter.weight.data)
+
         if self.bias is not None:
             self.bias.data.fill_(0)
 
@@ -327,7 +331,8 @@ class SpatialTransformerXFeature3d(nn.Module):
             grid = self.grid.expand(N, self.outdims, 1, 2)
             grid = torch.stack([torch.clamp(grid + shift[:, i, :][:, None, None, :], -1, 1) for i in range(t)], 1)
             grid = grid.contiguous().view(-1, self.outdims, 1, 2)
-        z = self.avg(x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h))
+        z = self.filter(x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h))
+        z = self.avg(z)
         y = F.grid_sample(z, grid)
         y = (y.squeeze(-1) * feat).sum(1).view(N, t, self.outdims)
 
@@ -339,8 +344,9 @@ class SpatialTransformerXFeature3d(nn.Module):
         r = self.__class__.__name__ + \
             ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
-            r += ' with bias'
-        r += super().__repr__().replace('\n', '\n|\t')
+            r += ' with bias\n'
+        for ch in self.children():
+            r += '  -> ' + ch.__repr__() + '\n'
         return r
 
 
