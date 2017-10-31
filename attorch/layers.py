@@ -364,7 +364,7 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
     def __init__(self, in_shape, outdims, bias=True, sigma_scale=1.0):
         super().__init__(in_shape[:1] + in_shape[2:], outdims, bias=bias, sigma_scale=sigma_scale)
 
-    def forward(self, x):
+    def forward(self, x, shift=None):
         N, c, t, w, h = x.size()
         tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ self.raw_weight.view(self.outdims, -1).t()
         if self.bias is not None:
@@ -485,7 +485,7 @@ class SpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def forward(self, x):
+    def forward(self, x, shift=None):
         N = x.size(0)
         y = x.view(N, -1) @ self.weight.t()
         if self.bias is not None:
@@ -613,39 +613,6 @@ class BiasBatchNorm3d(nn.BatchNorm3d):
 
     def initialize(self):
         self.bias.data.fill_(0.)
-
-
-class DivNorm3d(nn.Module):
-    def __init__(self, num_features, sigma=0.1, bias=False, scale=False):
-        super().__init__()
-        self.sigma = sigma
-        self.num_features = num_features
-
-        if bias:
-            b = Parameter(torch.zero(num_features))
-            self.register_parameter('bias', b)
-        else:
-            self.register_parameter('bias', None)
-
-        if scale:
-            s = Parameter(torch.ones(num_features))
-            self.register_parameter('scale', s)
-        else:
-            self.register_parameter('scale', None)
-
-    def __repr__(self):
-        return ('{name}({num_features}, sigma={sigma})'.format(name=self.__class__.__name__, **self.__dict__))
-
-    def forward(self, x):
-        mu = x.mean(1).mean(2).mean(3).mean(4)
-        y = x - mu.expand_as(x)
-        y = y / torch.sqrt(self.sigma + y.pow(2).mean().expand_as(y))
-
-        if self.bias is not None:
-            y = y + self.bias.expand_as(y)
-        if self.scale is not None:
-            y = y * self.scale.expand_as(y)
-        return y
 
 
 class ExtendedConv2d(nn.Conv2d):
