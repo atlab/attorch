@@ -30,6 +30,9 @@ class H5Dataset(Dataset):
     def __getitem__(self, item):
         return tuple(torch.from_numpy(self._transforms[d](self.fid[d][item])) for d in self.data_keys)
 
+    def __iter__(self):
+        yield from map(self.__getitem__, range(len(self)))
+
     def __len__(self):
         return self._len
 
