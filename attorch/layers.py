@@ -361,7 +361,7 @@ class SpatialTransformerPooled3d(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, spatial_kern=3, pool_steps=1, positive=False, bias=True):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -395,6 +395,8 @@ class SpatialTransformerPooled3d(nn.Module):
             return self.features.abs().sum()
 
     def forward(self, x, shift=None):
+        if self.positive:
+            positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
         N, c, t, w, h = x.size()
         m = self.pool_steps + 1
@@ -453,16 +455,22 @@ class SpatialTransformerCompressed3d(nn.Module):
         else:
             self.register_parameter('bias', None)
         # self.avg = nn.AvgPool2d((pool_size, pool_size), stride=(pool_size, pool_size))
-        pools = []
-        c2 = c // self.compression_factor
-        fm = c
-        self.compressor = nn.Conv2d(c, c2, 1)
-        for _ in range(pool_steps):
-            pools.append(
-                nn.AvgPool2d((pool_size, pool_size), stride=(pool_size, pool_size))
-            )
-            fm += c2
-        self.avg = nn.ModuleList(pools)
+        # pools = []
+        fm = (self.pool_steps + 1) * c
+        # out = c // self.compression_factor
+        self.avg = nn.Conv2d(c, c, pool_size, stride=pool_size, bias=False, groups=c)
+        self.avg.weight.data.fill_(1 / pool_size ** 2)
+        # # fm = (self.pool_steps + 1) * c
+        # for i in range(pool_steps):
+        #     pools.append(
+        #         nn.Conv2d(c2, out, pool_size, stride=pool_size, bias=False)
+        #     )
+        #     pools[-1].weight.data.fill_(1 / pool_size ** 2)
+        #     c2 = out
+        #     fm += out
+        #     out = max(out // self.compression_factor, 1)
+        #
+        # self.avg = nn.ModuleList(pools)
         self.feature_multiplicity = fm
         self.features = Parameter(torch.Tensor(1, self.feature_multiplicity, 1, outdims))
         self.initialize()
@@ -494,9 +502,9 @@ class SpatialTransformerCompressed3d(nn.Module):
             grid = grid.contiguous().view(-1, self.outdims, 1, 2)
         z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
         pools = [F.grid_sample(z, grid)]
-        z = self.compressor(z)
+        positive(self.avg.weight)
         for i in range(0, self.pool_steps):
-            z = self.avg[i](z)
+            z = self.avg(z)
             pools.append(F.grid_sample(z, grid))
         y = torch.cat(pools, dim=1)
         y = (y.squeeze(-1) * feat).sum(1).view(N, t, self.outdims)
