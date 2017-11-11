@@ -431,54 +431,27 @@ class SpatialTransformerPooled3d(nn.Module):
         return r
 
 
-class SpatialTransformerCompressed3d(nn.Module):
-    """
-    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
-    Gaussian over spatial dimensions.
-    """
+class SpatialTransformer3d(nn.Module):
 
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
-                 pool_size=2):
+    def __init__(self, features, outdims, positive=True, bias=True):
         super().__init__()
-        self.pool_steps = pool_steps
-        self.pool_size = pool_size
-        self.in_shape = in_shape
-        c, t, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
-        self.compression_factor = 2
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
             self.register_parameter('bias', bias)
         else:
             self.register_parameter('bias', None)
-        # self.avg = nn.AvgPool2d((pool_size, pool_size), stride=(pool_size, pool_size))
-        # pools = []
-        fm = (self.pool_steps + 1) * c
-        # out = c // self.compression_factor
-        self.avg = nn.Conv2d(c, c, pool_size, stride=pool_size, bias=False, groups=c)
-        self.avg.weight.data.fill_(1 / pool_size ** 2)
-        # # fm = (self.pool_steps + 1) * c
-        # for i in range(pool_steps):
-        #     pools.append(
-        #         nn.Conv2d(c2, out, pool_size, stride=pool_size, bias=False)
-        #     )
-        #     pools[-1].weight.data.fill_(1 / pool_size ** 2)
-        #     c2 = out
-        #     fm += out
-        #     out = max(out // self.compression_factor, 1)
-        #
-        # self.avg = nn.ModuleList(pools)
-        self.feature_multiplicity = fm
-        self.features = Parameter(torch.Tensor(1, self.feature_multiplicity, 1, outdims))
+        self._nfeatures = features
+        self.features = Parameter(torch.Tensor(1, self._nfeatures, self.outdims))
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
         self.grid.data.uniform_(-.05, .05)
-        self.features.data.fill_(1 / self.in_shape[0])
+        self.features.data.fill_(1 / self._nfeatures)
 
         if self.bias is not None:
             self.bias.data.fill_(0)
@@ -489,38 +462,35 @@ class SpatialTransformerCompressed3d(nn.Module):
         else:
             return self.features.abs().sum()
 
-    def forward(self, x, shift=None):
+    def forward(self, inputs_, shift=None):
+        if self.positive:
+            positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
-        N, c, t, w, h = x.size()
-        feat = self.features.view(1, self.feature_multiplicity, self.outdims)
 
+        N, c, t, w, h = inputs_[0].size()
         if shift is None:
             grid = self.grid.expand(N * t, self.outdims, 1, 2)
         else:
             grid = self.grid.expand(N, self.outdims, 1, 2)
             grid = torch.stack([grid + shift[:, i, :][:, None, None, :] for i in range(t)], 1)
             grid = grid.contiguous().view(-1, self.outdims, 1, 2)
-        z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
-        pools = [F.grid_sample(z, grid)]
-        positive(self.avg.weight)
-        for i in range(0, self.pool_steps):
-            z = self.avg(z)
-            pools.append(F.grid_sample(z, grid))
-        y = torch.cat(pools, dim=1)
-        y = (y.squeeze(-1) * feat).sum(1).view(N, t, self.outdims)
 
+        feats = []
+        for x in inputs_:
+            N, c, t, w, h = x.size()
+            z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
+            feats.append(F.grid_sample(z, grid))
+        y = torch.cat(feats, dim=1)
+        y = (y.squeeze(-1) * self.features).sum(1).view(N, t, self.outdims)
         if self.bias is not None:
             y = y + self.bias
         return y
 
     def __repr__(self):
-        c, _, w, h = self.in_shape
         r = self.__class__.__name__ + \
-            ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
+            ' (' + '{}'.format(self._nfeatures) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
             r += ' with bias\n'
-        for ch in self.children():
-            r += '  -> ' + ch.__repr__() + '\n'
         return r
 
 
