@@ -431,7 +431,7 @@ class SpatialTransformerPooled3d(nn.Module):
         return r
 
 
-class SpatialTransformer3d(nn.Module):
+class SpatialTransformerStacked3d(nn.Module):
 
     def __init__(self, features, outdims, positive=True, bias=True):
         super().__init__()
