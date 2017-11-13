@@ -8,6 +8,7 @@ import numpy as np
 from math import ceil
 # from .module import Module
 from torch.nn import Parameter
+from torch.nn.init import xavier_normal
 
 
 class Offset(nn.Module):
@@ -33,8 +34,6 @@ class Elu1(nn.Module):
 
     def forward(self, x):
         return elu1(x)
-
-
 
 
 def log1exp(x):
@@ -114,7 +113,9 @@ class SpatialXFeatureLinear3D(nn.Module):
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sum(4, keepdim=True).sqrt().expand(self.spatial) + 1e-6)
+            weight = self.spatial / (
+                self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sum(4, keepdim=True).sqrt().expand(
+                    self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -246,7 +247,7 @@ class GaussianSpatialXFeatureLinear(nn.Module):
 
     def sigma_l1(self):
         return (self.sigma - self.sigma_eps).abs().mean()
-        
+
     def sigma_l2(self):
         return (self.sigma - self.sigma_eps).pow(2).mean()
 
@@ -254,13 +255,13 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if average:
             return self.features.abs().mean()
         else:
-            return self.features.abs().sum()
-             
+            return self.features.abs().sum
+
     def weight_l1(self, average=True):
         if average:
             return self.weight.abs().mean()
         else:
-            return self.weight.abs().sum()
+               return self.weight.abs().sum()
 
     def forward(self, x):
         N = x.size(0)
@@ -276,7 +277,228 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             r += ' with bias'
 
+        return r
 
+
+class SpatialTransformerXFeature3d(nn.Module):
+    """
+    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
+    Gaussian over spatial dimensions.
+    """
+
+    def __init__(self, in_shape, outdims, spatial_kern=3, positive=False, bias=True):
+        super().__init__()
+        self.in_shape = in_shape
+        c, t, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        self.features = Parameter(torch.Tensor(1, c, 1, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+
+        self.avg = nn.AvgPool2d((1, 1), stride=(1, 1))
+
+        assert spatial_kern % 2 == 1, 'spatial_kern must be odd sized'
+        self.filter = nn.Conv2d(c, c, spatial_kern, padding=spatial_kern // 2, groups=c, bias=False)
+        self.initialize()
+
+    @property
+    def pool(self):
+        return self.avg.kernel_size
+
+    @pool.setter
+    def pool(self, p):
+        self.avg.kernel_size = p
+        self.avg.stride = p
+
+    def initialize(self, init_noise=1e-3):
+        # randomly pick centers within the spatial map
+        self.grid.data.uniform_(-.05, .05)
+        self.features.data.fill_(1 / self.in_shape[0])
+        xavier_normal(self.filter.weight.data)
+
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def filter_l1(self):
+        return self.filter.weight.abs().mean()
+
+    def feature_l1(self, average=True):
+        if average:
+            return self.features.abs().mean()
+        else:
+            return self.features.abs().sum
+
+    def forward(self, x, shift=None):
+        N, c, t, w, h = x.size()
+        feat = self.features.view(1, c, self.outdims)
+
+        if shift is None:
+            grid = self.grid.expand(N * t, self.outdims, 1, 2)
+        else:
+            grid = self.grid.expand(N, self.outdims, 1, 2)
+            grid = torch.stack([torch.clamp(grid + shift[:, i, :][:, None, None, :], -1, 1) for i in range(t)], 1)
+            grid = grid.contiguous().view(-1, self.outdims, 1, 2)
+        z = self.filter(x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h))
+        z = self.avg(z)
+        y = F.grid_sample(z, grid)
+        y = (y.squeeze(-1) * feat).sum(1).view(N, t, self.outdims)
+
+        if self.bias is not None:
+            y = y + self.bias
+        return y
+
+    def __repr__(self):
+        c, _, w, h = self.in_shape
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias\n'
+        for ch in self.children():
+            r += '  -> ' + ch.__repr__() + '\n'
+        return r
+
+
+class SpatialTransformerPooled3d(nn.Module):
+    """
+    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
+    Gaussian over spatial dimensions.
+    """
+
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True):
+        super().__init__()
+        self.pool_steps = pool_steps
+        self.in_shape = in_shape
+        c, t, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        self.features = Parameter(torch.Tensor(1, c * (self.pool_steps + 1), 1, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+
+        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
+        self.initialize()
+
+    def initialize(self, init_noise=1e-3):
+        # randomly pick centers within the spatial map
+        self.grid.data.uniform_(-.05, .05)
+        self.features.data.fill_(1 / self.in_shape[0])
+
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def feature_l1(self, average=True):
+        if average:
+            return self.features.abs().mean()
+        else:
+            return self.features.abs().sum()
+
+    def forward(self, x, shift=None):
+        if self.positive:
+            positive(self.features)
+        self.grid.data = torch.clamp(self.grid.data, -1, 1)
+        N, c, t, w, h = x.size()
+        m = self.pool_steps + 1
+        feat = self.features.view(1, m * c, self.outdims)
+
+        if shift is None:
+            grid = self.grid.expand(N * t, self.outdims, 1, 2)
+        else:
+            grid = self.grid.expand(N, self.outdims, 1, 2)
+            grid = torch.stack([grid + shift[:, i, :][:, None, None, :] for i in range(t)], 1)
+            grid = grid.contiguous().view(-1, self.outdims, 1, 2)
+        z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
+        pools = [F.grid_sample(z, grid)]
+        for i in range(self.pool_steps):
+            z = self.avg(z)
+            pools.append(F.grid_sample(z, grid))
+        y = torch.cat(pools, dim=1)
+        y = (y.squeeze(-1) * feat).sum(1).view(N, t, self.outdims)
+
+        if self.bias is not None:
+            y = y + self.bias
+        return y
+
+    def __repr__(self):
+        c, _, w, h = self.in_shape
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias\n'
+        for ch in self.children():
+            r += '  -> ' + ch.__repr__() + '\n'
+        return r
+
+
+class SpatialTransformerStacked3d(nn.Module):
+    def __init__(self, features, outdims, positive=True, bias=True):
+        super().__init__()
+        self.outdims = outdims
+        self.positive = positive
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+        self._nfeatures = features
+        self.features = Parameter(torch.Tensor(1, self._nfeatures, self.outdims))
+        self.initialize()
+
+    def initialize(self, init_noise=1e-3):
+        # randomly pick centers within the spatial map
+        self.grid.data.uniform_(-.05, .05)
+        self.features.data.fill_(1 / self._nfeatures)
+
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def feature_l1(self, average=True):
+        if average:
+            return self.features.abs().mean()
+        else:
+            return self.features.abs().sum()
+
+    def forward(self, inputs_, shift=None):
+        if self.positive:
+            positive(self.features)
+        self.grid.data = torch.clamp(self.grid.data, -1, 1)
+
+        N, c, t, w, h = inputs_[0].size()
+        if shift is None:
+            grid = self.grid.expand(N * t, self.outdims, 1, 2)
+        else:
+            grid = self.grid.expand(N, self.outdims, 1, 2)
+            grid = torch.stack([grid + shift[:, i, :][:, None, None, :] for i in range(t)], 1)
+            grid = grid.contiguous().view(-1, self.outdims, 1, 2)
+
+        feats = []
+        for x in inputs_:
+            N, c, t, w, h = x.size()
+            z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
+            feats.append(F.grid_sample(z, grid))
+        y = torch.cat(feats, dim=1)
+        y = (y.squeeze(-1) * self.features).sum(1).view(N, t, self.outdims)
+        if self.bias is not None:
+            y = y + self.bias
+        return y
+
+    def __repr__(self):
+        r = self.__class__.__name__ + \
+            ' (' + '{}'.format(self._nfeatures) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias\n'
         return r
 
 
@@ -289,7 +511,7 @@ class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
     def __init__(self, in_shape, outdims, bias=True, sigma_scale=1.0):
         super().__init__(in_shape[:1] + in_shape[2:], outdims, bias=bias, sigma_scale=sigma_scale)
 
-    def forward(self, x):
+    def forward(self, x, shift=None):
         N, c, t, w, h = x.size()
         tmp = x.transpose(2, 1).contiguous().view(-1, c * w * h) @ self.raw_weight.view(self.outdims, -1).t()
         if self.bias is not None:
@@ -354,7 +576,6 @@ class FullLinear(nn.Module):
         return r
 
 
-
 class SpatialXFeatureLinear(nn.Module):
     """
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.  
@@ -382,7 +603,8 @@ class SpatialXFeatureLinear(nn.Module):
         if self.positive:
             positive(self.spatial)
         if self.normalize:
-            weight = self.spatial / (self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
+            weight = self.spatial / (
+                self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -399,7 +621,7 @@ class SpatialXFeatureLinear(nn.Module):
         n = self.outdims
         c, w, h = self.in_shape
         ret = (self.normalized_spatial.view(self.outdims, -1).abs().sum(1, keepdim=True)
-               * self.features.view(self.outdims, -1).abs().sum(1, keepdim=True)).sum()
+               * self.features.view(self.outdims, -1).abs().sum(1)).sum()
         if average:
             ret = ret / (n * c * w * h)
         return ret
@@ -410,7 +632,7 @@ class SpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def forward(self, x):
+    def forward(self, x, shift=None):
         N = x.size(0)
         y = x.view(N, -1) @ self.weight.t()
         if self.bias is not None:
@@ -486,7 +708,7 @@ class WidthXHeightXFeatureLinear(nn.Module):
         n, comp = self.outdims, self.components
         weight = self.normalized_width.expand(n, 1, w, h, comp) \
                  * self.normalized_height.expand(n, 1, w, h, comp)
-        weight = weight.sum(4).view(n, 1, w, h)
+        weight = weight.sum(4, keepdim=True).view(n, 1, w, h)
         return weight
 
     @property
@@ -538,39 +760,6 @@ class BiasBatchNorm3d(nn.BatchNorm3d):
 
     def initialize(self):
         self.bias.data.fill_(0.)
-
-
-class DivNorm3d(nn.Module):
-    def __init__(self, num_features, sigma=0.1, bias=False, scale=False):
-        super().__init__()
-        self.sigma = sigma
-        self.num_features = num_features
-
-        if bias:
-            b = Parameter(torch.zero(num_features))
-            self.register_parameter('bias', b)
-        else:
-            self.register_parameter('bias', None)
-
-        if scale:
-            s = Parameter(torch.ones(num_features))
-            self.register_parameter('scale', s)
-        else:
-            self.register_parameter('scale', None)
-
-    def __repr__(self):
-        return ('{name}({num_features}, sigma={sigma})'.format(name=self.__class__.__name__, **self.__dict__))
-
-    def forward(self, x):
-        mu = x.mean(1, keepdim=True).mean(2, keepdim=True).mean(3, keepdim=True).mean(4, keepdim=True)
-        y = x - mu.expand_as(x)
-        y = y / torch.sqrt(self.sigma + y.pow(2).mean().expand_as(y))
-
-        if self.bias is not None:
-            y = y + self.bias.expand_as(y)
-        if self.scale is not None:
-            y = y * self.scale.expand_as(y)
-        return y
 
 
 class ExtendedConv2d(nn.Conv2d):

@@ -16,7 +16,7 @@ class PoissonLoss(nn.Module):
 
 
 class PoissonLoss3d(nn.Module):
-    def __init__(self, bias=1e-12):
+    def __init__(self, bias=1e-16):
         super().__init__()
         self.bias = bias
 
