@@ -20,6 +20,10 @@ class Offset(nn.Module):
         return x + self.offset
 
 
+def elu1(x):
+    return F.elu(x, inplace=True) + 1.
+
+
 class Elu1(nn.Module):
     """
     Elu activation function shifted by 1 to ensure that the
@@ -29,11 +33,7 @@ class Elu1(nn.Module):
     """
 
     def forward(self, x):
-        return F.elu(x, inplace=True) + 1.
-
-
-def elu1(x):
-    return F.elu(x, inplace=True) + 1.
+        return elu1(x)
 
 
 def log1exp(x):
@@ -245,14 +245,23 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def sigma_l1(self, offset=0.1):
+    def sigma_l1(self):
         return (self.sigma - self.sigma_eps).abs().mean()
+
+    def sigma_l2(self):
+        return (self.sigma - self.sigma_eps).pow(2).mean()
 
     def feature_l1(self, average=True):
         if average:
             return self.features.abs().mean()
         else:
             return self.features.abs().sum
+
+    def weight_l1(self, average=True):
+        if average:
+            return self.weight.abs().mean()
+        else:
+               return self.weight.abs().sum()
 
     def forward(self, x):
         N = x.size(0)
@@ -502,7 +511,6 @@ class SpatialTransformerPooled3d(nn.Module):
 
 
 class SpatialTransformerStacked3d(nn.Module):
-
     def __init__(self, features, outdims, positive=True, bias=True):
         super().__init__()
         self.outdims = outdims
