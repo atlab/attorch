@@ -408,7 +408,7 @@ class SpatialTransformerPooled2d(nn.Module):
         if shift is None:
             grid = self.grid.expand(N, self.outdims, 1, 2)
         else:
-            grid = (self.grid + shift[:, None, None, :]).expand(N, self.outdims, 1, 2)
+            grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
 
 
         pools = [F.grid_sample(x, grid)]
