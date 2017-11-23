@@ -261,7 +261,7 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if average:
             return self.weight.abs().mean()
         else:
-               return self.weight.abs().sum()
+            return self.weight.abs().sum()
 
     def forward(self, x):
         N = x.size(0)
@@ -363,6 +363,7 @@ class SpatialTransformerXFeature3d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
+
 class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True):
         super().__init__()
@@ -410,7 +411,6 @@ class SpatialTransformerPooled2d(nn.Module):
         else:
             grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
 
-
         pools = [F.grid_sample(x, grid)]
         for _ in range(self.pool_steps):
             x = self.avg(x)
@@ -431,7 +431,6 @@ class SpatialTransformerPooled2d(nn.Module):
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
-
 
 
 class SpatialTransformerPooled3d(nn.Module):
@@ -570,8 +569,6 @@ class SpatialTransformerStacked3d(nn.Module):
         if self.bias is not None:
             r += ' with bias\n'
         return r
-
-
 
 
 class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
