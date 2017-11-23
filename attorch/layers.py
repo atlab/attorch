@@ -387,23 +387,9 @@ class SpatialTransformerPooled2d(nn.Module):
         self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
         self.initialize()
 
-    def initialize(self, init_noise=1e-3, data=None):
-        if data is not None:
-            rfs = 0
-            bs = 100
-            dl = DataLoader(data, batch_size=bs, shuffle=False)
-            for x, _, _, y in tqdm(dl):
-                rfs += (x * y[:, :, None, None]).sum(0) / x.size(1)
-            m, n = rfs[0].shape
-            x, y = np.meshgrid(np.linspace(-1, 1, m), np.linspace(-1, 1, n))
-            x = x.ravel()
-            y = y.ravel()
-            rfs = np.stack([r.numpy() for r in rfs], axis=0)
-            i = np.argmax(rfs.reshape(rfs.shape[0], -1), axis=1)
-            self.grid.data = torch.from_numpy(np.vstack([y[i], x[i]]).T[None, :, None, :].astype(np.float32))
-        else:
-            # randomly pick centers within the spatial map
-            self.grid.data.uniform_(-.01, .01)
+    def initialize(self, init_noise=1e-3):
+        # randomly pick centers within the spatial map
+        self.grid.data.uniform_(-.1, .1)
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:
