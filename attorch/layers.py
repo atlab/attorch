@@ -1,4 +1,5 @@
 import torch
+from scipy.signal import triang
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -367,6 +368,21 @@ class SpatialTransformerXFeature3d(nn.Module):
         return r
 
 
+def hamming(M):
+    """
+    Hamming window of lenth M
+
+    Args:
+        M: length of hamming window
+
+    Returns: numpy array with hamming window
+
+    """
+    n = np.arange(M)
+    h = 0.54 - 0.46 * np.cos(2.0 * np.pi * n / (M - 1))
+    return h / h.sum()
+
+
 class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True):
         super().__init__()
@@ -384,12 +400,24 @@ class SpatialTransformerPooled2d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
+        # self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
+        # h = hamming(5).astype(np.float32)
+        h = triang(5).astype(np.float32)
+        h /= h.sum()
+        self.register_buffer('hamming', torch.from_numpy((h[:, None] * h[None, :])[None, None, ...]))
+
+        def avg(input_):
+            n, c, w, h = input_.size()
+            x = F.conv2d(input_.view(n * c, 1, w, h), Variable(self.hamming), stride=2, padding=2)
+            return x.view(n, c, *x.size()[-2:])
+
+        self.avg = avg
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
-        self.grid.data.uniform_(-.1, .1)
+        # self.grid.data.uniform_(-.1, .1)
+        self.grid.data.uniform_(-1., 1.)
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:

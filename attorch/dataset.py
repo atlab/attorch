@@ -8,7 +8,7 @@ from torch.autograd import Variable
 
 
 class H5Dataset(Dataset):
-    def __init__(self, filename, *data_keys, info_name=None):
+    def __init__(self, filename, *data_keys, info_name=None, transforms=None):
         self.fid = h5py.File(filename, 'r')
         m = None
         for key in data_keys:
@@ -26,6 +26,9 @@ class H5Dataset(Dataset):
         for d in self.data_keys:
             if hasattr(self, d + '_transform'):
                 self._transforms[d] = getattr(self, d + '_transform')
+        if transforms is not None:
+            for k, t in transforms.items():
+                self._transforms[k] = t
 
     def __getitem__(self, item):
         return tuple(torch.from_numpy(self._transforms[d](self.fid[d][item])) for d in self.data_keys)
