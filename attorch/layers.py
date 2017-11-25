@@ -384,7 +384,8 @@ def hamming(M):
 
 
 class SpatialTransformerPooled2d(nn.Module):
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, pool=None,
+                 pool_kern=2, pool_stride=None):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -400,20 +401,21 @@ class SpatialTransformerPooled2d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        # self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
-        # h = hamming(5).astype(np.float32)
-        h_size = 7
-        h = triang(h_size).astype(np.float32)
-        h /= h.sum()
-        self.register_buffer('hamming', torch.from_numpy((h[:, None] * h[None, :])[None, None, ...]))
+        if pool is None:
+            self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern)
+        else:
+            pool_stride = pool_stride or pool_kern // 2
+            h = pool(pool_kern).astype(np.float32)
+            h /= h.sum()
+            self.register_buffer('hamming', torch.from_numpy((h[:, None] * h[None, :])[None, None, ...]))
 
-        def avg(input_):
-            n, c, w, h = input_.size()
-            x = F.conv2d(input_.view(n * c, 1, w, h), Variable(self.hamming),
-                         stride=h_size//2, padding=h_size // 2)
-            return x.view(n, c, *x.size()[-2:])
+            def avg(input_):
+                n, c, w, h = input_.size()
+                x = F.conv2d(input_.view(n * c, 1, w, h), Variable(self.hamming),
+                             stride=pool_stride, padding=pool_kern // 2)
+                return x.view(n, c, *x.size()[-2:])
 
-        self.avg = avg
+            self.avg = avg
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
@@ -449,6 +451,7 @@ class SpatialTransformerPooled2d(nn.Module):
         pools = [F.grid_sample(x, grid)]
         for _ in range(self.pool_steps):
             x = self.avg(x)
+            print(x.size())
             pools.append(F.grid_sample(x, grid))
         y = torch.cat(pools, dim=1)
         y = (y.squeeze(-1) * feat).sum(1).view(N, self.outdims)
