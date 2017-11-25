@@ -385,7 +385,7 @@ def hamming(M):
 
 class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
-                 pool='avg', pool_kern=2, pool_stride=None):
+                 pool='avg', pool_kern=2, pool_stride=None, init_range=.1):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -419,10 +419,11 @@ class SpatialTransformerPooled2d(nn.Module):
                 return x.view(n, c, *x.size()[-2:])
 
             self.avg = avg
+        self.init_range = init_range
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
-        self.grid.data.uniform_(-.1, .1)
+        self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:
@@ -477,7 +478,7 @@ class SpatialTransformerPooled3d(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, init_range=.05):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -494,11 +495,12 @@ class SpatialTransformerPooled3d(nn.Module):
             self.register_parameter('bias', None)
 
         self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
+        self.init_range  = init_range
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
-        self.grid.data.uniform_(-.05, .05)
+        self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:
