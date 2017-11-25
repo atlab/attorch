@@ -402,13 +402,15 @@ class SpatialTransformerPooled2d(nn.Module):
 
         # self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
         # h = hamming(5).astype(np.float32)
-        h = triang(5).astype(np.float32)
+        h_size = 7
+        h = triang(h_size).astype(np.float32)
         h /= h.sum()
         self.register_buffer('hamming', torch.from_numpy((h[:, None] * h[None, :])[None, None, ...]))
 
         def avg(input_):
             n, c, w, h = input_.size()
-            x = F.conv2d(input_.view(n * c, 1, w, h), Variable(self.hamming), stride=2, padding=2)
+            x = F.conv2d(input_.view(n * c, 1, w, h), Variable(self.hamming),
+                         stride=h_size//2, padding=h_size // 2)
             return x.view(n, c, *x.size()[-2:])
 
         self.avg = avg
@@ -416,8 +418,10 @@ class SpatialTransformerPooled2d(nn.Module):
 
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
-        # self.grid.data.uniform_(-.1, .1)
-        self.grid.data.uniform_(-1., 1.)
+        self.grid.data.uniform_(-.1, .1)
+        # self.grid.data.fill_(.9)
+        # self.grid.data *= 2 * torch.FloatTensor(*self.grid.data.size()).normal_().ge(0).float() - 1
+
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:
