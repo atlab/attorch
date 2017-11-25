@@ -1,5 +1,5 @@
 import torch
-from scipy.signal import triang
+import  scipy.signal
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -384,8 +384,8 @@ def hamming(M):
 
 
 class SpatialTransformerPooled2d(nn.Module):
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, pool=None,
-                 pool_kern=2, pool_stride=None):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
+                 pool='avg', pool_kern=2, pool_stride=None):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -401,17 +401,20 @@ class SpatialTransformerPooled2d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        if pool is None:
+        self.pool = pool
+        self.pool_kern = pool_kern
+        if pool == 'avg':
             self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern)
         else:
+            poolfilter = getattr(scipy.signal, pool)
             pool_stride = pool_stride or pool_kern // 2
-            h = pool(pool_kern).astype(np.float32)
+            h = poolfilter(pool_kern).astype(np.float32)
             h /= h.sum()
-            self.register_buffer('hamming', torch.from_numpy((h[:, None] * h[None, :])[None, None, ...]))
+            self.register_buffer('poolfilter', torch.from_numpy((h[:, None] * h[None, :])[None, None, ...]))
 
             def avg(input_):
                 n, c, w, h = input_.size()
-                x = F.conv2d(input_.view(n * c, 1, w, h), Variable(self.hamming),
+                x = F.conv2d(input_.view(n * c, 1, w, h), Variable(self.poolfilter),
                              stride=pool_stride, padding=pool_kern // 2)
                 return x.view(n, c, *x.size()[-2:])
 
@@ -419,11 +422,7 @@ class SpatialTransformerPooled2d(nn.Module):
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
-        # randomly pick centers within the spatial map
         self.grid.data.uniform_(-.1, .1)
-        # self.grid.data.fill_(.9)
-        # self.grid.data *= 2 * torch.FloatTensor(*self.grid.data.size()).normal_().ge(0).float() - 1
-
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:
@@ -451,7 +450,6 @@ class SpatialTransformerPooled2d(nn.Module):
         pools = [F.grid_sample(x, grid)]
         for _ in range(self.pool_steps):
             x = self.avg(x)
-            print(x.size())
             pools.append(F.grid_sample(x, grid))
         y = torch.cat(pools, dim=1)
         y = (y.squeeze(-1) * feat).sum(1).view(N, self.outdims)
@@ -465,7 +463,9 @@ class SpatialTransformerPooled2d(nn.Module):
         r = self.__class__.__name__ + \
             ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
-            r += ' with bias\n'
+            r += ' with bias'
+        r += ' and pooling {} with {}x{} for {} steps\n'.format(self.pool, self.pool_kern,
+                                                                self.pool_kern, self.pool_steps)
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
