@@ -1,4 +1,8 @@
 import torch
+import  scipy.signal
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
 from .constraints import positive
 from torch import nn as nn
 from torch.nn import functional as F
@@ -261,7 +265,7 @@ class GaussianSpatialXFeatureLinear(nn.Module):
         if average:
             return self.weight.abs().mean()
         else:
-               return self.weight.abs().sum()
+            return self.weight.abs().sum()
 
     def forward(self, x):
         N = x.size(0)
@@ -363,8 +367,25 @@ class SpatialTransformerXFeature3d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
+
+def hamming(M):
+    """
+    Hamming window of lenth M
+
+    Args:
+        M: length of hamming window
+
+    Returns: numpy array with hamming window
+
+    """
+    n = np.arange(M)
+    h = 0.54 - 0.46 * np.cos(2.0 * np.pi * n / (M - 1))
+    return h / h.sum()
+
+
 class SpatialTransformerPooled2d(nn.Module):
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
+                 pool='avg', pool_kern=2, pool_stride=None, init_range=.1):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -380,12 +401,29 @@ class SpatialTransformerPooled2d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
+        self.pool = pool
+        self.pool_kern = pool_kern
+        if pool == 'avg':
+            self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern)
+        else:
+            poolfilter = getattr(scipy.signal, pool)
+            pool_stride = pool_stride or pool_kern // 2
+            h = poolfilter(pool_kern).astype(np.float32)
+            h /= h.sum()
+            self.register_buffer('poolfilter', torch.from_numpy((h[:, None] * h[None, :])[None, None, ...]))
+
+            def avg(input_):
+                n, c, w, h = input_.size()
+                x = F.conv2d(input_.view(n * c, 1, w, h), Variable(self.poolfilter),
+                             stride=pool_stride, padding=pool_kern // 2)
+                return x.view(n, c, *x.size()[-2:])
+
+            self.avg = avg
+        self.init_range = init_range
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
-        # randomly pick centers within the spatial map
-        self.grid.data.uniform_(-.05, .05)
+        self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:
@@ -410,7 +448,6 @@ class SpatialTransformerPooled2d(nn.Module):
         else:
             grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
 
-
         pools = [F.grid_sample(x, grid)]
         for _ in range(self.pool_steps):
             x = self.avg(x)
@@ -427,11 +464,12 @@ class SpatialTransformerPooled2d(nn.Module):
         r = self.__class__.__name__ + \
             ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
-            r += ' with bias\n'
+            r += ' with bias'
+        r += ' and pooling {} with {}x{} for {} steps\n'.format(self.pool, self.pool_kern,
+                                                                self.pool_kern, self.pool_steps)
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
-
 
 
 class SpatialTransformerPooled3d(nn.Module):
@@ -440,7 +478,7 @@ class SpatialTransformerPooled3d(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, init_range=.05):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -457,11 +495,12 @@ class SpatialTransformerPooled3d(nn.Module):
             self.register_parameter('bias', None)
 
         self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
+        self.init_range  = init_range
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
-        self.grid.data.uniform_(-.05, .05)
+        self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:
@@ -570,8 +609,6 @@ class SpatialTransformerStacked3d(nn.Module):
         if self.bias is not None:
             r += ' with bias\n'
         return r
-
-
 
 
 class GaussianSpatialXFeatureLinear3d(GaussianSpatialXFeatureLinear):
