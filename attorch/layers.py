@@ -1,5 +1,5 @@
 import torch
-import  scipy.signal
+import scipy.signal
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -495,7 +495,7 @@ class SpatialTransformerPooled3d(nn.Module):
             self.register_parameter('bias', None)
 
         self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
-        self.init_range  = init_range
+        self.init_range = init_range
         self.initialize()
 
     def initialize(self, init_noise=1e-3):
