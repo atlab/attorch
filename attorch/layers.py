@@ -368,21 +368,6 @@ class SpatialTransformerXFeature3d(nn.Module):
         return r
 
 
-def hamming(M):
-    """
-    Hamming window of lenth M
-
-    Args:
-        M: length of hamming window
-
-    Returns: numpy array with hamming window
-
-    """
-    n = np.arange(M)
-    h = 0.54 - 0.46 * np.cos(2.0 * np.pi * n / (M - 1))
-    return h / h.sum()
-
-
 class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
                  pool='avg', pool_kern=2, pool_stride=None, init_range=.1):
@@ -434,6 +419,21 @@ class SpatialTransformerPooled2d(nn.Module):
             return self.features.abs().mean()
         else:
             return self.features.abs().sum()
+
+    def neuron_layer_power(self, x, neuron_id):
+        if self.positive:
+            positive(self.features)
+        self.grid.data = torch.clamp(self.grid.data, -1, 1)
+        N, c, w, h = x.size()
+        m = self.pool_steps + 1
+        feat = self.features.view(1, m * c, self.outdims)
+        ret = 0
+        for i, start in enumerate(range(0, m * c, c)):
+            tmp = (x * feat[:, start:start + c, neuron_id, None, None]).sum(1)  # ignore bias
+            ret = ret + tmp.pow(2).mean()
+            if i < self.pool_steps:
+                x = self.avg(x)
+        return ret / m
 
     def forward(self, x, shift=None):
         if self.positive:
@@ -1026,3 +1026,51 @@ def get_conv(in_shape, out_shape, kernel_size, stride=None, constrain=None, **kw
     else:
         return ConstrainedConvTranspose2d(in_channels, out_channels, kernel_size, stride=stride, padding=padding,
                                           constrain=constrain, output_padding=output_padding, **kwargs)
+
+
+class LaplaceNormalize(nn.Module):
+    """
+    Pytorch reimplementation of
+
+    https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/tutorials/deepdream/deepdream.ipynb
+    """
+
+    def __init__(self, scale_n=4, color=False):
+        super().__init__()
+        k = np.float32([1, 4, 6, 4, 1])
+        k = np.outer(k, k)
+        k5x5 = k[None, None, ...] / k.sum()
+        if color:
+            k5x5 *= np.eye((1, 3, 1, 1), dtype=np.float32)
+        self.register_buffer('laplace', torch.from_numpy(k5x5))
+        self.scale_n = scale_n
+        self._pad = len(k) // 2
+
+    def lap_split(self, img):
+        lo = F.conv2d(img, Variable(self.laplace), padding=self._pad)
+        lo2 = F.conv_transpose2d(lo, Variable(self.laplace * 4), padding=self._pad)
+        hi = img - lo2
+        return lo, hi
+
+    def lap_split_n(self, img, n):
+        levels = []
+        for i in range(n):
+            img, hi = self.lap_split(img)
+            levels.append(hi)
+        levels.append(img)
+        return levels[::-1]
+
+    def lap_merge(self, levels):
+        img = levels[0]
+        for hi in levels[1:]:
+            img = F.conv_transpose2d(img, Variable(self.laplace * 4), padding=self._pad) + hi
+        return img
+
+    def normalize_std(self, img, eps=1e-10):
+        std = img.std() # pow(2).mean().sqrt()
+        return img / torch.clamp(std, eps)
+
+    def forward(self, img):
+        tlevels = self.lap_split_n(img, self.scale_n)
+        tlevels = list(map(self.normalize_std, tlevels))
+        return self.lap_merge(tlevels)
