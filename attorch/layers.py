@@ -368,6 +368,69 @@ class SpatialTransformerXFeature3d(nn.Module):
         return r
 
 
+class SpatialTransformerLaplace2d(nn.Module):
+    def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True, init_range=.1):
+        super().__init__()
+        self.in_shape = in_shape
+        c, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self.laplace = LaplacePyramid(scale_n=scale_n)
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        self.features = Parameter(torch.Tensor(1, c * (scale_n + 2), 1, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+        self.init_range = init_range
+        self.initialize()
+
+    def initialize(self, init_noise=1e-3):
+        self.grid.data.uniform_(-self.init_range, self.init_range)
+        self.features.data.fill_(1 / self.in_shape[0])
+
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+    def feature_l1(self, average=True):
+        if average:
+            return self.features.abs().mean()
+        else:
+            return self.features.abs().sum()
+
+    def forward(self, x, shift=None):
+        if self.positive:
+            positive(self.features)
+        self.grid.data = torch.clamp(self.grid.data, -1, 1)
+        N, c, w, h = x.size()
+        m = self.laplace.scale_n + 2
+        feat = self.features.view(1, m * c, self.outdims)
+
+        if shift is None:
+            grid = self.grid.expand(N, self.outdims, 1, 2)
+        else:
+            grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
+        y = torch.cat([F.grid_sample(x, grid), F.grid_sample(self.laplace(x), grid)], dim=1)
+        y = (y.squeeze(-1) * feat).sum(1).view(N, self.outdims)
+
+        if self.bias is not None:
+            y = y + self.bias
+        return y
+
+    def __repr__(self):
+        c, w, h = self.in_shape
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias'
+
+        for ch in self.children():
+            r += '  -> ' + ch.__repr__() + '\n'
+        return r
+
+
 class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
                  pool='avg', pool_kern=2, pool_stride=None, init_range=.1):
@@ -1028,6 +1091,34 @@ def get_conv(in_shape, out_shape, kernel_size, stride=None, constrain=None, **kw
                                           constrain=constrain, output_padding=output_padding, **kwargs)
 
 
+class LaplacePyramid(nn.Module):
+    def __init__(self, scale_n=4):
+        super().__init__()
+        k = np.float32([1, 4, 6, 4, 1])
+        k = np.outer(k, k)
+        k5x5 = k[None, None, ...] / k.sum()
+        self.register_buffer('laplace', torch.from_numpy(k5x5))
+        self.scale_n = scale_n
+        self._kern = len(k)
+        self._pad = self._kern // 2
+
+    def lap_split(self, img):
+        N, c, *_ = img.size()
+        laplace = Variable(self.laplace.expand(c, 1, self._kern, self._kern)).contiguous()
+        lo = F.conv2d(img, laplace, padding=self._pad, groups=c)
+        lo2 = F.conv_transpose2d(lo, laplace , padding=self._pad, groups=c)
+        hi = img - lo2
+        return lo, hi
+
+    def forward(self, img):
+        levels = []
+        for i in range(self.scale_n):
+            img, hi = self.lap_split(img)
+            levels.append(hi)
+        levels.append(img)
+        return torch.cat(levels[::-1], dim=1)
+
+
 class LaplaceNormalize(nn.Module):
     """
     Pytorch reimplementation of
@@ -1067,7 +1158,7 @@ class LaplaceNormalize(nn.Module):
         return img
 
     def normalize_std(self, img, eps=1e-10):
-        std = img.std() # pow(2).mean().sqrt()
+        std = img.std()  # pow(2).mean().sqrt()
         return img / torch.clamp(std, eps)
 
     def forward(self, img):
