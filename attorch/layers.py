@@ -400,6 +400,18 @@ class SpatialTransformerLaplace2d(nn.Module):
         else:
             return self.features.abs().sum()
 
+    def neuron_layer_power(self, x, neuron_id):
+        if self.positive:
+            positive(self.features)
+        self.grid.data = torch.clamp(self.grid.data, -1, 1)
+        N, c, w, h = x.size()
+        m = self.laplace.scale_n + 1
+        feat = self.features.view(1, m * c, self.outdims)
+
+        y = torch.cat(self.laplace(x), dim=1)
+        y = (y * feat[:,:,neuron_id, None, None]).sum(1)
+        return y.pow(2).mean()
+
     def forward(self, x, shift=None):
         if self.positive:
             positive(self.features)
@@ -1109,7 +1121,6 @@ class LaplacePyramid(nn.Module):
         laplace = Variable(self.laplace.expand(c, 1, self._kern, self._kern)).contiguous()
         lo = F.conv2d(img, laplace, padding=self._pad, groups=c)
         hi = img - lo
-        lo = lo[:, :, ::2, ::2]
         # lo2 = F.conv_transpose2d(lo, 4*laplace , padding=self._pad, groups=c, stride=2)
         # hi = img - lo2
         return lo, hi
@@ -1143,9 +1154,7 @@ class LaplaceNormalize(nn.Module):
 
     def lap_split(self, img):
         lo = F.conv2d(img, Variable(self.laplace), padding=self._pad)
-        lo2 = F.conv_transpose2d(lo, Variable(self.laplace * 4), padding=self._pad)
-        hi = img - lo2
-        return lo, hi
+        return lo, img - lo
 
     def lap_split_n(self, img, n):
         levels = []
@@ -1158,7 +1167,7 @@ class LaplaceNormalize(nn.Module):
     def lap_merge(self, levels):
         img = levels[0]
         for hi in levels[1:]:
-            img = F.conv_transpose2d(img, Variable(self.laplace * 4), padding=self._pad) + hi
+            img = img+ hi
         return img
 
     def normalize_std(self, img, eps=1e-10):
