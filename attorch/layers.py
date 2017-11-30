@@ -377,7 +377,7 @@ class SpatialTransformerLaplace2d(nn.Module):
         self.positive = positive
         self.laplace = LaplacePyramid(scale_n=scale_n)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
-        self.features = Parameter(torch.Tensor(1, c * (scale_n + 2), 1, outdims))
+        self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
@@ -405,14 +405,16 @@ class SpatialTransformerLaplace2d(nn.Module):
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
         N, c, w, h = x.size()
-        m = self.laplace.scale_n + 2
+        m = self.laplace.scale_n + 1
         feat = self.features.view(1, m * c, self.outdims)
 
         if shift is None:
             grid = self.grid.expand(N, self.outdims, 1, 2)
         else:
             grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
-        y = torch.cat([F.grid_sample(x, grid), F.grid_sample(self.laplace(x), grid)], dim=1)
+
+        pools = [F.grid_sample(x, grid) for x in self.laplace(x)]
+        y = torch.cat(pools, dim=1)
         y = (y.squeeze(-1) * feat).sum(1).view(N, self.outdims)
 
         if self.bias is not None:
@@ -1106,8 +1108,10 @@ class LaplacePyramid(nn.Module):
         N, c, *_ = img.size()
         laplace = Variable(self.laplace.expand(c, 1, self._kern, self._kern)).contiguous()
         lo = F.conv2d(img, laplace, padding=self._pad, groups=c)
-        lo2 = F.conv_transpose2d(lo, laplace , padding=self._pad, groups=c)
-        hi = img - lo2
+        hi = img - lo
+        lo = lo[:, :, ::2, ::2]
+        # lo2 = F.conv_transpose2d(lo, 4*laplace , padding=self._pad, groups=c, stride=2)
+        # hi = img - lo2
         return lo, hi
 
     def forward(self, img):
@@ -1116,7 +1120,7 @@ class LaplacePyramid(nn.Module):
             img, hi = self.lap_split(img)
             levels.append(hi)
         levels.append(img)
-        return torch.cat(levels[::-1], dim=1)
+        return levels[::-1]
 
 
 class LaplaceNormalize(nn.Module):
