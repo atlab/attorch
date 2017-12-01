@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, namedtuple, Mapping
 
 import h5py
 import torch
@@ -7,8 +7,59 @@ import numpy as np
 from torch.autograd import Variable
 
 
+class DataTransform:
+    def initialize(self, dataset):
+        pass
+
+    def __repr__(self):
+        return self.__class__.__name__
+
+
+class TransformFromFuncs(DataTransform):
+    def __init__(self):
+        super().__init__()
+        self.transformees = []
+
+    def initialize(self, dataset):
+        self._transforms = []
+        for d in dataset.data_keys:
+            if hasattr(dataset, d + '_transform'):
+                self._transforms.append(getattr(dataset, d + '_transform'))
+                self.transformees.append(d)
+            else:
+                self._transforms.append(lambda x: x)
+
+    def __call__(self, item):
+        return tuple(tr(it) for tr, it in zip(self._transforms, item))
+
+    def __repr__(self):
+        return "{}({})".format(self.__class__.__name__, ', '.join(self.transformees))
+
+
+class ToTensor(DataTransform):
+    def __call__(self, item):
+        return tuple(torch.from_numpy(it) for it in item)
+
+
+class Chain(DataTransform):
+    def __init__(self, *transforms):
+        self.transforms = transforms
+
+    def initialize(self, dataset):
+        for tr in self.transforms:
+            tr.initialize(dataset)
+
+    def __call__(self, item):
+        for tr in self.transforms:
+            item = tr(item)
+        return item
+
+    def __repr__(self):
+        return "{}[{}]".format(self.__class__.__name__, ' -> '.join(map(repr, self.transforms)))
+
+
 class H5Dataset(Dataset):
-    def __init__(self, filename, *data_keys, info_name=None, transforms=None):
+    def __init__(self, filename, *data_keys, info_name=None, transform=None):
         self.fid = h5py.File(filename, 'r')
         m = None
         for key in data_keys:
@@ -19,19 +70,19 @@ class H5Dataset(Dataset):
                 assert m == len(self.fid[key]), 'Length of datasets do not match'
         self._len = m
         self.data_keys = data_keys
+
         if info_name is not None:
             self.info = self.fid[info_name]
 
-        self._transforms = defaultdict(lambda: lambda x: x)
-        for d in self.data_keys:
-            if hasattr(self, d + '_transform'):
-                self._transforms[d] = getattr(self, d + '_transform')
-        if transforms is not None:
-            for k, t in transforms.items():
-                self._transforms[k] = t
+        if transform is None:
+            self.transform = Chain(TransformFromFuncs(), ToTensor())
+        else:
+            self.transform = transform
+
+        self.transform.initialize(self)
 
     def __getitem__(self, item):
-        return tuple(torch.from_numpy(self._transforms[d](self.fid[d][item])) for d in self.data_keys)
+        return self.transform(tuple(self.fid[d][item] for d in self.data_keys))
 
     def __iter__(self):
         yield from map(self.__getitem__, range(len(self)))
@@ -40,10 +91,8 @@ class H5Dataset(Dataset):
         return self._len
 
     def __repr__(self):
-        return '\n'.join(['Tensor {}: {} {}'.format(key, self.fid[key].shape,
-                                                    '(transformed)' if key in self._transforms else '')
-                          for key in self.data_keys])
-
+        return '\n'.join(['Tensor {}: {} '.format(key, self.fid[key].shape)
+                          for key in self.data_keys] + ['Transforms: ' + repr(self.transform)])
 
 
 class MultiTensorDataset(Dataset):

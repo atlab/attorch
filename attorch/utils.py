@@ -1,4 +1,5 @@
 import contextlib
+from collections import namedtuple, Mapping
 
 import numpy as np
 from graphviz import Digraph
@@ -7,6 +8,20 @@ from scipy.interpolate import InterpolatedUnivariateSpline
 from torch.autograd import Variable
 import torch
 import time
+
+
+def namedtuple_with_defaults(typename, field_names, default_values=()):
+    """
+    From https://stackoverflow.com/questions/11351032/namedtuple-and-optional-keyword-arguments
+    """
+    T = namedtuple(typename, field_names)
+    T.__new__.__defaults__ = (None,) * len(T._fields)
+    if isinstance(default_values, Mapping):
+        prototype = T(**default_values)
+    else:
+        prototype = T(*default_values)
+    T.__new__.__defaults__ = tuple(prototype)
+    return T
 
 def make_dot(var):
     """from https://github.com/szagoruyko/functional-zoo/blob/master/visualize.py"""
