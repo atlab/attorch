@@ -426,8 +426,8 @@ class SpatialTransformerLaplace2d(nn.Module):
             grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
 
         pools = [F.grid_sample(x, grid) for x in self.laplace(x)]
-        y = torch.cat(pools, dim=1)
-        y = (y.squeeze(-1) * feat).sum(1).view(N, self.outdims)
+        y = torch.cat(pools, dim=1).squeeze(-1)
+        y = (y * feat).sum(1).view(N, self.outdims)
 
         if self.bias is not None:
             y = y + self.bias
