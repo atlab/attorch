@@ -3,7 +3,7 @@ from torch.autograd import Variable
 import numpy as np
 import torch
 from itertools import product
-
+from torch.nn import functional as F
 
 def laplace():
     return np.array([[0.25, 0.5, 0.25], [0.5, -3.0, 0.5], [0.25, 0.5, 0.25]]).astype(np.float32)[None, None, ...]
@@ -28,12 +28,10 @@ class Laplace(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.conv = nn.Conv2d(1, 1, 3, bias=False, padding=1)
-        self.conv.weight.data.copy_(torch.from_numpy(laplace()))
-        self.conv.weight.requires_grad = False
+        self.register_buffer('filter', torch.from_numpy(laplace()))
 
     def forward(self, x):
-        return self.conv(x)
+        return F.conv2d(x, Variable(self.filter), bias=None)
 
 
 class Laplace3D(nn.Module):
@@ -43,12 +41,10 @@ class Laplace3D(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.conv = nn.Conv3d(1, 1, 3, bias=False, padding=1)
-        self.conv.weight.data.copy_(torch.from_numpy(laplace3d()))
-        self.conv.weight.requires_grad = False
+        self.register_buffer('filter', torch.from_numpy(laplace3d()))
 
     def forward(self, x):
-        return self.conv(x)
+        return F.conv3d(x, Variable(self.filter), bias=None)
 
 
 class LaplaceL2(nn.Module):
