@@ -466,8 +466,7 @@ class SpatialTransformerPooled2d(nn.Module):
             ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
             r += ' with bias'
-        r += ' and pooling {} with {}x{} for {} steps\n'.format(self.pool, self.pool_kern,
-                                                                self.pool_kern, self.pool_steps)
+        r += ' and pooling for {} steps\n'.format(self.pool_steps)
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
@@ -878,15 +877,21 @@ def get_conv(in_shape, out_shape, kernel_size, stride=None, constrain=None, **kw
 
 
 class GaussPyramid(nn.Module):
-    def __init__(self, scale_n=4):
+    def __init__(self, scale_n=4, downsample=False):
         super().__init__()
+        self.downsample = downsample
         k5x5 = np.float32([
-            [0.003765, 0.015019, 0.023792, 0.015019, 0.003765],
-            [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
-            [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],
-            [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
-            [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]]
+            [1 / 16, 1 / 8, 1. / 16],
+            [1 / 8, 1 / 4, 1. / 8],
+            [1 / 16, 1 / 8, 1. / 16]]
         )
+        # k5x5 = np.float32([
+        #     [0.003765, 0.015019, 0.023792, 0.015019, 0.003765],
+        #     [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
+        #     [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],
+        #     [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
+        #     [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]]
+        # )
         self.register_buffer('gauss', torch.from_numpy(k5x5))
         self.scale_n = scale_n
         self._kern = k5x5.shape[0]
@@ -902,7 +907,10 @@ class GaussPyramid(nn.Module):
             self._filter_cache = gauss
         lo = F.conv2d(F.pad(img, pad=self._pad, mode='reflect'), gauss, groups=c)
         hi = img - lo
-        return lo[:, :, ::2, ::2], hi
+        if self.downsample:
+            return lo[:, :, ::2, ::2], hi
+        else:
+            return lo, hi
 
     def forward(self, img):
         levels = []
