@@ -466,8 +466,7 @@ class SpatialTransformerPooled2d(nn.Module):
             ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
             r += ' with bias'
-        r += ' and pooling {} with {}x{} for {} steps\n'.format(self.pool, self.pool_kern,
-                                                                self.pool_kern, self.pool_steps)
+        r += ' and pooling for {} steps\n'.format(self.pool_steps)
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
