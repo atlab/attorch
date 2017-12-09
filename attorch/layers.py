@@ -877,19 +877,26 @@ def get_conv(in_shape, out_shape, kernel_size, stride=None, constrain=None, **kw
 
 
 class GaussPyramid(nn.Module):
-    def __init__(self, scale_n=4):
+    def __init__(self, scale_n=4, downsample=True):
+
         super().__init__()
+        self.downsample = downsample
+        # k5x5 = np.float32([
+        #     [0.003765, 0.015019, 0.023792, 0.015019, 0.003765],
+        #     [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
+        #     [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],
+        #     [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
+        #     [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]]
+        # )
         k5x5 = np.float32([
-            [0.003765, 0.015019, 0.023792, 0.015019, 0.003765],
-            [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
-            [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],
-            [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
-            [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]]
+            [1 / 16, 1 / 8, 1 / 16],
+            [1 / 8, 1 / 4, 1 / 8],
+            [1 / 16, 1 / 8, 1 / 16]]
         )
         self.register_buffer('gauss', torch.from_numpy(k5x5))
         self.scale_n = scale_n
         self._kern = k5x5.shape[0]
-        self._pad = (self._kern // 2,) * 4
+        self._pad = self._kern // 2
         self._filter_cache = None
 
     def lap_split(self, img):
@@ -899,9 +906,12 @@ class GaussPyramid(nn.Module):
         else:
             gauss = Variable(self.gauss.expand(c, 1, self._kern, self._kern)).contiguous()
             self._filter_cache = gauss
-        lo = F.conv2d(F.pad(img, pad=self._pad, mode='reflect'), gauss, groups=c)
+        lo = F.conv2d(img, gauss, padding=self._pad, groups=c)
         hi = img - lo
-        return lo[:, :, ::2, ::2], hi
+        if self.downsample:
+            return lo[:, :, ::2, ::2], hi
+        else:
+            return lo, hi
 
     def forward(self, img):
         levels = []
@@ -910,6 +920,9 @@ class GaussPyramid(nn.Module):
             levels.append(hi)
         levels.append(img)
         return levels
+
+    def __repr__(self):
+        return "GaussPyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample})".format(**self.__dict__)
 
 
 class LaplacePyramid(nn.Module):
