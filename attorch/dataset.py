@@ -15,13 +15,33 @@ class DataTransform:
         return self.__class__.__name__
 
 
+class SubsampleNeurons(DataTransform):
+    def __init__(self, datakey, idx, axis):
+        super().__init__()
+        self.idx = idx
+        self.datakey = datakey
+        self._subsamp = None
+        self.axis = axis
+
+    def initialize(self, dataset):
+        self._subsamp = []
+        for d in dataset.data_keys:
+            if d == self.datakey:
+                self._subsamp.append([slice(None) for _ in range(self.axis - 1)] + [self.idx, ...])
+            else:
+                self._subsamp.append(...)
+
+    def __call__(self, item):
+        return tuple(it[sub] for sub, it in zip(self._subsamp, item))
+
+
 class TransformFromFuncs(DataTransform):
     def __init__(self):
         super().__init__()
-        self.transformees = []
 
     def initialize(self, dataset):
         self._transforms = []
+        self.transformees = []
         for d in dataset.data_keys:
             if hasattr(dataset, d + '_transform'):
                 self._transforms.append(getattr(dataset, d + '_transform'))
@@ -53,6 +73,12 @@ class Chain(DataTransform):
         for tr in self.transforms:
             item = tr(item)
         return item
+
+    def __add__(self, other):
+        return Chain(*self.transforms, other)
+
+    def __iadd__(self, other):
+        return self.transforms.append(other)
 
     def __repr__(self):
         return "{}[{}]".format(self.__class__.__name__, ' -> '.join(map(repr, self.transforms)))
