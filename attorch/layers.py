@@ -309,13 +309,13 @@ class SpatialXFeatureLinear(nn.Module):
 
 
 class SpatialTransformerGauss2d(nn.Module):
-    def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True, init_range=.1):
+    def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True, init_range=.1, downsample=True):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss_pyramid = GaussPyramid(scale_n=scale_n)
+        self.gauss_pyramid = GaussPyramid(scale_n=scale_n, downsample=downsample)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
@@ -881,18 +881,18 @@ class GaussPyramid(nn.Module):
 
         super().__init__()
         self.downsample = downsample
-        # k5x5 = np.float32([
-        #     [0.003765, 0.015019, 0.023792, 0.015019, 0.003765],
-        #     [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
-        #     [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],
-        #     [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
-        #     [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]]
-        # )
         k5x5 = np.float32([
-            [1 / 16, 1 / 8, 1 / 16],
-            [1 / 8, 1 / 4, 1 / 8],
-            [1 / 16, 1 / 8, 1 / 16]]
+            [0.003765, 0.015019, 0.023792, 0.015019, 0.003765],
+            [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
+            [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],
+            [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
+            [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]]
         )
+        # k5x5 = np.float32([
+        #     [1 / 16, 1 / 8, 1 / 16],
+        #     [1 / 8, 1 / 4, 1 / 8],
+        #     [1 / 16, 1 / 8, 1 / 16]]
+        # )
         self.register_buffer('gauss', torch.from_numpy(k5x5))
         self.scale_n = scale_n
         self._kern = k5x5.shape[0]
