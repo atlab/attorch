@@ -78,7 +78,8 @@ class Chain(DataTransform):
         return Chain(*self.transforms, other)
 
     def __iadd__(self, other):
-        return self.transforms.append(other)
+        self.transforms = self.transforms + (other,)
+        return self
 
     def __repr__(self):
         return "{}[{}]".format(self.__class__.__name__, ' -> '.join(map(repr, self.transforms)))

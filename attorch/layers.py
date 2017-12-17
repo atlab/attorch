@@ -552,13 +552,13 @@ class SpatialXFeatureLinear3d(nn.Module):
 
 
 class SpatialTransformerGauss3d(nn.Module):
-    def __init__(self, in_shape, outdims, scale_n=4, positive=True, bias=True, init_range=.05):
+    def __init__(self, in_shape, outdims, scale_n=4, positive=True, bias=True, init_range=.05, downsample=True):
         super().__init__()
         self.in_shape = in_shape
         c, _, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss = GaussPyramid(scale_n=scale_n)
+        self.gauss = GaussPyramid(scale_n=scale_n, downsample=downsample)
 
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
