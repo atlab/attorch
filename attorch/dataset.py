@@ -122,6 +122,48 @@ class H5Dataset(Dataset):
                           for key in self.data_keys] + ['Transforms: ' + repr(self.transform)])
 
 
+class H5GroupDataset(Dataset):
+    def __init__(self, filename, *data_groups, transforms=None):
+        self._fid = h5py.File(filename, 'r')
+
+        m = None
+        for key in data_groups:
+            assert key in self._fid, 'Could not find {} in file'.format(key)
+            l = len(self._fid[key])
+            if m is not None and l != m:
+                raise  ValueError('groups have different length')
+            m = l
+        self._len = m
+
+        self.data_groups = data_groups
+
+        self.transforms = transforms or []
+
+        self.data_point = namedtuple('DataPoint', data_groups)
+
+    def __getitem__(self, item):
+        x = self.data_point(*(np.array(self._fid[g][str(item)]) for g in self.data_groups))
+        for tr in self.transforms:
+            x = tr(x)
+        return x
+
+    def __iter__(self):
+        yield from map(self.__getitem__, range(len(self)))
+
+    def __len__(self):
+        return self._len
+
+    def __repr__(self):
+        return 'H5GroupDataset m={}: ({})'.format(len(self), ', '.join(self.data_groups)) \
+             + '\n[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) +']'
+
+    def __getattr__(self, item):
+        if item in self._fid:
+            return self._fid[item]
+        else:
+            raise AttributeError('Item {} not found in {}'.format(item, self.__class__.__name__))
+
+
 class MultiTensorDataset(Dataset):
     """Dataset wrapping data and target tensors.
     Each sample will be retrieved by indexing both tensors along the first
