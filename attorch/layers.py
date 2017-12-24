@@ -309,7 +309,8 @@ class SpatialXFeatureLinear(nn.Module):
 
 
 class SpatialTransformerGauss2d(nn.Module):
-    def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True, init_range=.1, downsample=True):
+    def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
+                 init_range=.1, downsample=True):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
