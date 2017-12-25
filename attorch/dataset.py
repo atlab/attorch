@@ -122,7 +122,7 @@ class H5Dataset(Dataset):
                           for key in self.data_keys] + ['Transforms: ' + repr(self.transform)])
 
 
-class H5GroupDataset(Dataset):
+class H5SequenceSet(Dataset):
     def __init__(self, filename, *data_groups, transforms=None):
         self._fid = h5py.File(filename, 'r')
 
@@ -154,8 +154,8 @@ class H5GroupDataset(Dataset):
         return self._len
 
     def __repr__(self):
-        return 'H5GroupDataset m={}: ({})'.format(len(self), ', '.join(self.data_groups)) \
-             + '\n[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) +']'
+        return 'H5SequenceSet m={}:\n\t({})'.format(len(self), ', '.join(self.data_groups)) \
+             + '\n\t[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) +']'
 
     def __getattr__(self, item):
         if item in self._fid:
