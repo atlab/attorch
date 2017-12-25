@@ -159,7 +159,13 @@ class H5SequenceSet(Dataset):
 
     def __getattr__(self, item):
         if item in self._fid:
-            return self._fid[item]
+            item = self._fid[item]
+            if isinstance(item, h5py._hl.dataset.Dataset):
+                item = item.value
+                if item.dtype.char == 'S': # convert bytes to univcode
+                    item = item.astype(str)
+                return item
+            return item
         else:
             raise AttributeError('Item {} not found in {}'.format(item, self.__class__.__name__))
 
