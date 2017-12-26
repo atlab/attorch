@@ -141,6 +141,12 @@ class H5SequenceSet(Dataset):
 
         self.data_point = namedtuple('DataPoint', data_groups)
 
+    def transform(self, x, exclude=None):
+        for tr in self.transforms:
+            if exclude is None or not isinstance(tr, exclude):
+                x = tr(x)
+        return x
+
     def __getitem__(self, item):
         x = self.data_point(*(np.array(self._fid[g][str(item)]) for g in self.data_groups))
         for tr in self.transforms:
