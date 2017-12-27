@@ -670,8 +670,9 @@ class SpatialTransformerPooled3d(nn.Module):
         N, c, t, w, h = x.size()
         m = self.pool_steps + 1
         if subsample is not None:
-            outdims = len(subsample)
-            feat = self.features[..., subsample].view(1, m * c,outdims)
+            feat = self.features[..., subsample].contiguous()
+            outdims = feat.size(-1)
+            feat = feat.view(1, m * c,outdims)
             grid = self.grid[:, subsample, ...]
         else:
             grid = self.grid
