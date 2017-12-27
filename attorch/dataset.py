@@ -122,7 +122,7 @@ class H5Dataset(Dataset):
                           for key in self.data_keys] + ['Transforms: ' + repr(self.transform)])
 
 
-class H5GroupDataset(Dataset):
+class H5SequenceSet(Dataset):
     def __init__(self, filename, *data_groups, transforms=None):
         self._fid = h5py.File(filename, 'r')
 
@@ -141,6 +141,12 @@ class H5GroupDataset(Dataset):
 
         self.data_point = namedtuple('DataPoint', data_groups)
 
+    def transform(self, x, exclude=None):
+        for tr in self.transforms:
+            if exclude is None or not isinstance(tr, exclude):
+                x = tr(x)
+        return x
+
     def __getitem__(self, item):
         x = self.data_point(*(np.array(self._fid[g][str(item)]) for g in self.data_groups))
         for tr in self.transforms:
@@ -154,12 +160,18 @@ class H5GroupDataset(Dataset):
         return self._len
 
     def __repr__(self):
-        return 'H5GroupDataset m={}: ({})'.format(len(self), ', '.join(self.data_groups)) \
-             + '\n[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) +']'
+        return 'H5SequenceSet m={}:\n\t({})'.format(len(self), ', '.join(self.data_groups)) \
+             + '\n\t[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) +']'
 
     def __getattr__(self, item):
         if item in self._fid:
-            return self._fid[item]
+            item = self._fid[item]
+            if isinstance(item, h5py._hl.dataset.Dataset):
+                item = item.value
+                if item.dtype.char == 'S': # convert bytes to univcode
+                    item = item.astype(str)
+                return item
+            return item
         else:
             raise AttributeError('Item {} not found in {}'.format(item, self.__class__.__name__))
 
