@@ -78,7 +78,8 @@ class Chain(DataTransform):
         return Chain(*self.transforms, other)
 
     def __iadd__(self, other):
-        return self.transforms.append(other)
+        self.transforms = self.transforms + (other,)
+        return self
 
     def __repr__(self):
         return "{}[{}]".format(self.__class__.__name__, ' -> '.join(map(repr, self.transforms)))
@@ -119,6 +120,60 @@ class H5Dataset(Dataset):
     def __repr__(self):
         return '\n'.join(['Tensor {}: {} '.format(key, self.fid[key].shape)
                           for key in self.data_keys] + ['Transforms: ' + repr(self.transform)])
+
+
+class H5SequenceSet(Dataset):
+    def __init__(self, filename, *data_groups, transforms=None):
+        self._fid = h5py.File(filename, 'r')
+
+        m = None
+        for key in data_groups:
+            assert key in self._fid, 'Could not find {} in file'.format(key)
+            l = len(self._fid[key])
+            if m is not None and l != m:
+                raise  ValueError('groups have different length')
+            m = l
+        self._len = m
+
+        self.data_groups = data_groups
+
+        self.transforms = transforms or []
+
+        self.data_point = namedtuple('DataPoint', data_groups)
+
+    def transform(self, x, exclude=None):
+        for tr in self.transforms:
+            if exclude is None or not isinstance(tr, exclude):
+                x = tr(x)
+        return x
+
+    def __getitem__(self, item):
+        x = self.data_point(*(np.array(self._fid[g][str(item)]) for g in self.data_groups))
+        for tr in self.transforms:
+            x = tr(x)
+        return x
+
+    def __iter__(self):
+        yield from map(self.__getitem__, range(len(self)))
+
+    def __len__(self):
+        return self._len
+
+    def __repr__(self):
+        return 'H5SequenceSet m={}:\n\t({})'.format(len(self), ', '.join(self.data_groups)) \
+             + '\n\t[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) +']'
+
+    def __getattr__(self, item):
+        if item in self._fid:
+            item = self._fid[item]
+            if isinstance(item, h5py._hl.dataset.Dataset):
+                item = item.value
+                if item.dtype.char == 'S': # convert bytes to univcode
+                    item = item.astype(str)
+                return item
+            return item
+        else:
+            raise AttributeError('Item {} not found in {}'.format(item, self.__class__.__name__))
 
 
 class MultiTensorDataset(Dataset):
