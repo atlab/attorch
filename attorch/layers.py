@@ -242,7 +242,7 @@ class SpatialXFeatureLinear(nn.Module):
     Factorized fully connected layer. Weights are a sum of outer products between a spatial filter and a feature vector.
     """
 
-    def __init__(self, in_shape, outdims, bias=True, normalize=True, positive=False, spatial=None):
+    def __init__(self, in_shape, outdims, bias=True, normalize=True, positive=True, spatial=None):
         super().__init__()
         self.in_shape = in_shape
         self.outdims = outdims
@@ -263,6 +263,7 @@ class SpatialXFeatureLinear(nn.Module):
     def normalized_spatial(self):
         if self.positive:
             positive(self.spatial)
+            positive(self.features)
         if self.normalize:
             weight = self.spatial / (
                     self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
@@ -308,15 +309,15 @@ class SpatialXFeatureLinear(nn.Module):
             self.outdims) + ')'
 
 
-class SpatialTransformerGauss2d(nn.Module):
+class SpatialTransformerPyramid2d(nn.Module):
     def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
-                 init_range=.1, downsample=True):
+                 init_range=.1, downsample=True, type=None):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample)
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
@@ -553,14 +554,15 @@ class SpatialXFeatureLinear3d(nn.Module):
                ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
 
 
-class SpatialTransformerGauss3d(nn.Module):
-    def __init__(self, in_shape, outdims, scale_n=4, positive=True, bias=True, init_range=.05, downsample=True):
+class SpatialTransformerPyramid3d(nn.Module):
+    def __init__(self, in_shape, outdims, scale_n=4, positive=True, bias=True, init_range=.05, downsample=True,
+                 type=None):
         super().__init__()
         self.in_shape = in_shape
         c, _, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample)
+        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
 
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
