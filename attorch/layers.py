@@ -265,7 +265,7 @@ class SpatialXFeatureLinear(nn.Module):
             positive(self.spatial)
         if self.normalize:
             weight = self.spatial / (
-                self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
+                    self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -334,6 +334,14 @@ class SpatialTransformerGauss2d(nn.Module):
 
         if self.bias is not None:
             self.bias.data.fill_(0)
+
+    def group_sparsity(self, c):
+        f = self.features.size(1)
+        n = f // c
+        ret = 0
+        for chunk in range(0, f, c):
+            ret = ret + (self.features[:, chunk:chunk + c, ...].pow(2).mean(1) + 1e-12).sqrt().mean() / n
+        return ret
 
     def feature_l1(self, average=True):
         if average:
@@ -505,8 +513,8 @@ class SpatialXFeatureLinear3d(nn.Module):
             positive(self.spatial)
         if self.normalize:
             weight = self.spatial / (
-                self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sum(4, keepdim=True).sqrt().expand(
-                    self.spatial) + 1e-6)
+                    self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sum(4, keepdim=True).sqrt().expand(
+                        self.spatial) + 1e-6)
         else:
             weight = self.spatial
         return weight
@@ -672,13 +680,12 @@ class SpatialTransformerPooled3d(nn.Module):
         if subsample is not None:
             feat = self.features[..., subsample].contiguous()
             outdims = feat.size(-1)
-            feat = feat.view(1, m * c,outdims)
+            feat = feat.view(1, m * c, outdims)
             grid = self.grid[:, subsample, ...]
         else:
             grid = self.grid
             feat = self.features.view(1, m * c, self.outdims)
             outdims = self.outdims
-
 
         if shift is None:
             grid = grid.expand(N * t, outdims, 1, 2)
