@@ -15,15 +15,6 @@ from torch.nn import Parameter
 from torch.nn.init import xavier_normal
 
 
-class Offset(nn.Module):
-    def __init__(self, offset=1):
-        super().__init__()
-        self.offset = offset
-
-    def forward(self, x):
-        return x + self.offset
-
-
 def elu1(x):
     return F.elu(x, inplace=True) + 1.
 
@@ -117,13 +108,13 @@ class FullLinear(nn.Module):
     def weight(self):
         return self.raw_weight.view(self.outdims, -1)
 
-    def weight_l1(self, average=True):
+    def l1(self, average=True):
         if average:
             return self.weight.abs().mean()
         else:
             return self.weight.abs().sum()
 
-    def weight_l2(self, average=True):
+    def l2(self, average=True):
         if average:
             return self.weight.pow(2).mean()
         else:
@@ -329,7 +320,7 @@ class SpatialTransformerPyramid2d(nn.Module):
         self.init_range = init_range
         self.initialize()
 
-    def initialize(self, init_noise=1e-3):
+    def initialize(self):
         self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
 
@@ -575,14 +566,16 @@ class SpatialTransformerPyramid3d(nn.Module):
         self.init_range = init_range
         self.initialize()
 
-    def initialize(self, init_noise=1e-3):
+    def initialize(self):
         self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
 
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def feature_l1(self, average=True):
+    def feature_l1(self, average=True, subsample=None):
+        if subsample is not None: raise NotImplemented('Subsample is not implemented.')
+
         if average:
             return self.features.abs().mean()
         else:
