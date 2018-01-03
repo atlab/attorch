@@ -316,7 +316,7 @@ class SpatialTransformerGauss2d(nn.Module):
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss_pyramid = GaussPyramid(scale_n=scale_n, downsample=downsample)
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
@@ -335,12 +335,12 @@ class SpatialTransformerGauss2d(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def group_sparsity(self, c):
+    def group_sparsity(self, group_size):
         f = self.features.size(1)
-        n = f // c
+        n = f // group_size
         ret = 0
-        for chunk in range(0, f, c):
-            ret = ret + (self.features[:, chunk:chunk + c, ...].pow(2).mean(1) + 1e-12).sqrt().mean() / n
+        for chunk in range(0, f, group_size):
+            ret = ret + (self.features[:, chunk:chunk + group_size, ...].pow(2).mean(1) + 1e-12).sqrt().mean() / n
         return ret
 
     def feature_l1(self, average=True):
@@ -417,7 +417,7 @@ class SpatialTransformerPooled2d(nn.Module):
         self.init_range = init_range
         self.initialize()
 
-    def initialize(self, init_noise=1e-3):
+    def initialize(self):
         self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
 
@@ -430,20 +430,13 @@ class SpatialTransformerPooled2d(nn.Module):
         else:
             return self.features.abs().sum()
 
-    def neuron_layer_power(self, x, neuron_id):
-        if self.positive:
-            positive(self.features)
-        self.grid.data = torch.clamp(self.grid.data, -1, 1)
-        N, c, w, h = x.size()
-        m = self.pool_steps + 1
-        feat = self.features.view(1, m * c, self.outdims)
+    def group_sparsity(self, group_size):
+        f = self.features.size(1)
+        n = f // group_size
         ret = 0
-        for i, start in enumerate(range(0, m * c, c)):
-            tmp = (x * feat[:, start:start + c, neuron_id, None, None]).sum(1)  # ignore bias
-            ret = ret + tmp.pow(2).mean()
-            if i < self.pool_steps:
-                x = self.avg(x)
-        return ret / m
+        for chunk in range(0, f, group_size):
+            ret = ret + (self.features[:, chunk:chunk + group_size, ...].pow(2).mean(1) + 1e-12).sqrt().mean() / n
+        return ret
 
     def forward(self, x, shift=None):
         if self.positive:
@@ -567,7 +560,7 @@ class SpatialTransformerGauss3d(nn.Module):
         c, _, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss = GaussPyramid(scale_n=scale_n, downsample=downsample)
+        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample)
 
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
@@ -593,7 +586,9 @@ class SpatialTransformerGauss3d(nn.Module):
         else:
             return self.features.abs().sum()
 
-    def forward(self, x, shift=None):
+    def forward(self, x, shift=None, subsample=None):
+        if subsample is not None: raise NotImplemented('Subsample is not implemented.')
+
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
@@ -899,37 +894,42 @@ def get_conv(in_shape, out_shape, kernel_size, stride=None, constrain=None, **kw
                                           constrain=constrain, output_padding=output_padding, **kwargs)
 
 
-class GaussPyramid(nn.Module):
-    def __init__(self, scale_n=4, downsample=True):
-
-        super().__init__()
-        self.downsample = downsample
-        k5x5 = np.float32([
+class Pyramid(nn.Module):
+    _filter_dict = {
+        'gauss5x5': np.float32([
             [0.003765, 0.015019, 0.023792, 0.015019, 0.003765],
             [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
             [0.023792, 0.094907, 0.150342, 0.094907, 0.023792],
             [0.015019, 0.059912, 0.094907, 0.059912, 0.015019],
-            [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]]
-        )
-        # k5x5 = np.float32([
-        #     [1 / 16, 1 / 8, 1 / 16],
-        #     [1 / 8, 1 / 4, 1 / 8],
-        #     [1 / 16, 1 / 8, 1 / 16]]
-        # )
-        self.register_buffer('gauss', torch.from_numpy(k5x5))
+            [0.003765, 0.015019, 0.023792, 0.015019, 0.003765]]),
+        'gauss3x3': np.float32([
+            [1 / 16, 1 / 8, 1 / 16],
+            [1 / 8, 1 / 4, 1 / 8],
+            [1 / 16, 1 / 8, 1 / 16]]
+        ),
+        'laplace5x5': np.outer(np.float32([1, 4, 6, 4, 1]), np.float32([1, 4, 6, 4, 1])) / 256,
+
+    }
+
+    def __init__(self, scale_n=4, type='gauss5x5', downsample=True):
+        super().__init__()
+        self.type = type
+        self.downsample = downsample
+        h = self._filter_dict[type]
+        self.register_buffer('filter', torch.from_numpy(h))
         self.scale_n = scale_n
-        self._kern = k5x5.shape[0]
+        self._kern = h.shape[0]
         self._pad = self._kern // 2
         self._filter_cache = None
 
     def lap_split(self, img):
         N, c, *_ = img.size()
         if self._filter_cache is not None and self._filter_cache.size(0) == c:
-            gauss = self._filter_cache
+            filter = self._filter_cache
         else:
-            gauss = Variable(self.gauss.expand(c, 1, self._kern, self._kern)).contiguous()
-            self._filter_cache = gauss
-        lo = F.conv2d(img, gauss, padding=self._pad, groups=c)
+            filter = Variable(self.filter.expand(c, 1, self._kern, self._kern)).contiguous()
+            self._filter_cache = filter
+        lo = F.conv2d(img, filter, padding=self._pad, groups=c)
         hi = img - lo
         if self.downsample:
             return lo[:, :, ::2, ::2], hi
@@ -945,83 +945,5 @@ class GaussPyramid(nn.Module):
         return levels
 
     def __repr__(self):
-        return "GaussPyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample})".format(**self.__dict__)
-
-
-class LaplacePyramid(nn.Module):
-    def __init__(self, scale_n=4):
-        super().__init__()
-        k = np.float32([1, 4, 6, 4, 1])
-        k = np.outer(k, k)
-        k5x5 = k[None, None, ...] / k.sum()
-        self.register_buffer('laplace', torch.from_numpy(k5x5))
-        self.scale_n = scale_n
-        self._kern = len(k)
-        self._pad = (self._kern // 2,) * 4
-        self._filter_cache = None
-
-    def lap_split(self, img):
-        N, c, *_ = img.size()
-        if self._filter_cache is not None and self._filter_cache.size(0) == c:
-            laplace = self._filter_cache
-        else:
-            laplace = Variable(self.laplace.expand(c, 1, self._kern, self._kern)).contiguous()
-            self._filter_cache = laplace
-
-        lo = F.conv2d(F.pad(img, pad=self._pad, mode='reflect'), laplace, groups=c)
-        hi = img - lo
-        return lo[:, :, ::2, ::2], hi
-
-    def forward(self, img):
-        levels = []
-        for i in range(self.scale_n):
-            img, hi = self.lap_split(img)
-            levels.append(hi)
-        levels.append(img)
-        return levels
-
-
-class LaplaceNormalize(nn.Module):
-    """
-    Pytorch reimplementation of
-
-    https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/tutorials/deepdream/deepdream.ipynb
-    """
-
-    def __init__(self, scale_n=4, color=False):
-        super().__init__()
-        k = np.float32([1, 4, 6, 4, 1])
-        k = np.outer(k, k)
-        k5x5 = k[None, None, ...] / k.sum()
-        if color:
-            k5x5 *= np.eye((1, 3, 1, 1), dtype=np.float32)
-        self.register_buffer('laplace', torch.from_numpy(k5x5))
-        self.scale_n = scale_n
-        self._pad = len(k) // 2
-
-    def lap_split(self, img):
-        lo = F.conv2d(img, Variable(self.laplace), padding=self._pad)
-        return lo, img - lo
-
-    def lap_split_n(self, img, n):
-        levels = []
-        for i in range(n):
-            img, hi = self.lap_split(img)
-            levels.append(hi)
-        levels.append(img)
-        return levels[::-1]
-
-    def lap_merge(self, levels):
-        img = levels[0]
-        for hi in levels[1:]:
-            img = img + hi
-        return img
-
-    def normalize_std(self, img, eps=1e-10):
-        std = img.std()  # pow(2).mean().sqrt()
-        return img / torch.clamp(std, eps)
-
-    def forward(self, img):
-        tlevels = self.lap_split_n(img, self.scale_n)
-        tlevels = list(map(self.normalize_std, tlevels))
-        return self.lap_merge(tlevels)
+        return "Pyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample}, type={type})".format(
+            **self.__dict__)
