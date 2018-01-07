@@ -252,9 +252,7 @@ class SpatialXFeatureLinear(nn.Module):
 
     @property
     def normalized_spatial(self):
-        if self.positive:
-            positive(self.spatial)
-            positive(self.features)
+        positive(self.spatial)
         if self.normalize:
             weight = self.spatial / (
                     self.spatial.pow(2).sum(2, keepdim=True).sum(3, keepdim=True).sqrt().expand_as(self.spatial) + 1e-6)
@@ -264,6 +262,8 @@ class SpatialXFeatureLinear(nn.Module):
 
     @property
     def weight(self):
+        if self.positive:
+            positive(self.features)
         n = self.outdims
         c, w, h = self.in_shape
         weight = self.normalized_spatial.expand(n, c, w, h) * self.features.expand(n, c, w, h)
