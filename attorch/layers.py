@@ -573,16 +573,16 @@ class SpatialTransformerPyramid3d(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def feature_l1(self, average=True, subsample=None):
-        if subsample is not None: raise NotImplemented('Subsample is not implemented.')
+    def feature_l1(self, average=True, subs_idx=None):
+        if subs_idx is not None: raise NotImplemented('Subsample is not implemented.')
 
         if average:
             return self.features.abs().mean()
         else:
             return self.features.abs().sum()
 
-    def forward(self, x, shift=None, subsample=None):
-        if subsample is not None: raise NotImplemented('Subsample is not implemented.')
+    def forward(self, x, shift=None, subs_idx=None):
+        if subs_idx is not None: raise NotImplemented('Subsample is not implemented.')
 
         if self.positive:
             positive(self.features)
@@ -653,25 +653,25 @@ class SpatialTransformerPooled3d(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def feature_l1(self, average=True, subsample=None):
-        subsample = subsample if subsample is not None else slice(None)
+    def feature_l1(self, average=True, subs_idx=None):
+        subs_idx = subs_idx if subs_idx is not None else slice(None)
         if average:
-            return self.features[..., subsample].abs().mean()
+            return self.features[..., subs_idx].abs().mean()
         else:
-            return self.features[..., subsample].abs().sum()
+            return self.features[..., subs_idx].abs().sum()
 
-    def forward(self, x, shift=None, subsample=None):
+    def forward(self, x, shift=None, subs_idx=None):
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
 
         N, c, t, w, h = x.size()
         m = self.pool_steps + 1
-        if subsample is not None:
-            feat = self.features[..., subsample].contiguous()
+        if subs_idx is not None:
+            feat = self.features[..., subs_idx].contiguous()
             outdims = feat.size(-1)
             feat = feat.view(1, m * c, outdims)
-            grid = self.grid[:, subsample, ...]
+            grid = self.grid[:, subs_idx, ...]
         else:
             grid = self.grid
             feat = self.features.view(1, m * c, self.outdims)
@@ -692,10 +692,10 @@ class SpatialTransformerPooled3d(nn.Module):
         y = (y.squeeze(-1) * feat).sum(1).view(N, t, outdims)
 
         if self.bias is not None:
-            if subsample is None:
+            if subs_idx is None:
                 y = y + self.bias
             else:
-                y = y + self.bias[subsample]
+                y = y + self.bias[subs_idx]
 
         return y
 
