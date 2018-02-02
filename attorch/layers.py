@@ -405,7 +405,7 @@ class SpatialTransformerPooled2d(nn.Module):
             self.register_parameter('bias', None)
 
         self.pool_kern = pool_kern
-        self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern)
+        self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern, count_include_pad=False)
         self.init_range = init_range
         self.initialize()
 
@@ -641,7 +641,7 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
+        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2), count_include_pad=False)
         self.init_range = init_range
         self.initialize()
 
