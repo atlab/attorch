@@ -34,6 +34,15 @@ class SubsampleNeurons(DataTransform):
     def __call__(self, item):
         return tuple(it[sub] for sub, it in zip(self._subsamp, item))
 
+class Neurons2Behavior(DataTransform):
+    def __init__(self, idx):
+        super().__init__()
+        self.idx = idx
+
+    def __call__(self, item):
+        return tuple((item[0], np.hstack((item[1], item[3][~self.idx])), item[2], item[3][self.idx]))
+
+
 
 class TransformFromFuncs(DataTransform):
     def __init__(self):
