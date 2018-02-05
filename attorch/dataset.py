@@ -149,7 +149,6 @@ class H5SequenceSet(Dataset):
         self.transforms = transforms or []
 
         self.data_point = namedtuple('DataPoint', data_groups)
-        self.shuffle_dims = {}
 
     def transform(self, x, exclude=None):
         for tr in self.transforms:
