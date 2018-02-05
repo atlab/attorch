@@ -34,6 +34,7 @@ class SubsampleNeurons(DataTransform):
     def __call__(self, item):
         return tuple(it[sub] for sub, it in zip(self._subsamp, item))
 
+
 class Neurons2Behavior(DataTransform):
     def __init__(self, idx):
         super().__init__()
@@ -41,7 +42,6 @@ class Neurons2Behavior(DataTransform):
 
     def __call__(self, item):
         return tuple((item[0], np.hstack((item[1], item[3][~self.idx])), item[2], item[3][self.idx]))
-
 
 
 class TransformFromFuncs(DataTransform):
@@ -140,7 +140,7 @@ class H5SequenceSet(Dataset):
             assert key in self._fid, 'Could not find {} in file'.format(key)
             l = len(self._fid[key])
             if m is not None and l != m:
-                raise  ValueError('groups have different length')
+                raise ValueError('groups have different length')
             m = l
         self._len = m
 
@@ -149,6 +149,7 @@ class H5SequenceSet(Dataset):
         self.transforms = transforms or []
 
         self.data_point = namedtuple('DataPoint', data_groups)
+        self.shuffle_dims = {}
 
     def transform(self, x, exclude=None):
         for tr in self.transforms:
@@ -177,7 +178,7 @@ class H5SequenceSet(Dataset):
             item = self._fid[item]
             if isinstance(item, h5py._hl.dataset.Dataset):
                 item = item.value
-                if item.dtype.char == 'S': # convert bytes to univcode
+                if item.dtype.char == 'S':  # convert bytes to univcode
                     item = item.astype(str)
                 return item
             return item
