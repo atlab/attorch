@@ -6,6 +6,9 @@ from torch.utils.data import Dataset
 import numpy as np
 from torch.autograd import Variable
 
+class Invertible:
+    def inv(self, y):
+        raise NotImplemented('Subclasses of Invertible must implement an inv method')
 
 class DataTransform:
     def initialize(self, dataset):
@@ -155,6 +158,14 @@ class H5SequenceSet(Dataset):
         for tr in self.transforms:
             if exclude is None or not isinstance(tr, exclude):
                 x = tr(x)
+        return x
+
+    def invert(self, x, exclude=None):
+        for tr in reversed(filter(lambda tr: not isinstance(tr, exclude), self.transforms)):
+            if not isinstance(tr, Invertible):
+                raise TypeError('Cannot invert', tr.__class__.__name__)
+            else:
+                x = tr.inv(x)
         return x
 
     def __getitem__(self, item):
