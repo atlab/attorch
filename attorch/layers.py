@@ -803,7 +803,7 @@ def conv2d_config(in_shape, out_shape, kernel_size, stride=None):
                    or [channel, height, width]
         kernel_size: shape of the kernel. May be an integer or a pair tuple
         stride: (OPTIONAL) desired stride to be used. If not provided, optimal stride size
-                will be computed and returned to minimize the necesssary amount of padding
+                will be computed and returned to minimize the necessary amount of padding
                 or stripping.
 
     Returns:
