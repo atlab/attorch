@@ -1,5 +1,6 @@
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.nn import functional as F
 from torch.nn.modules.loss import _assert_no_grad, BCELoss
 import torch
 import numpy as np
@@ -59,7 +60,8 @@ class AvgCorr(nn.Module):
         var_out = delta_out.pow(2).mean(0, keepdim=True)
         var_target = delta_target.pow(2).mean(0, keepdim=True)
 
-        corrs = (delta_out * delta_target).mean(0, keepdim=True) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
+        corrs = (delta_out * delta_target).mean(0, keepdim=True) / (
+                (var_out + self.eps) * (var_target + self.eps)).sqrt()
         return corrs.mean()
 
 
@@ -76,7 +78,8 @@ class Corr(nn.Module):
         var_out = delta_out.pow(2).mean(0, keepdim=True)
         var_target = delta_target.pow(2).mean(0, keepdim=True)
 
-        corrs = (delta_out * delta_target).mean(0, keepdim=True) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
+        corrs = (delta_out * delta_target).mean(0, keepdim=True) / (
+                (var_out + self.eps) * (var_target + self.eps)).sqrt()
         return corrs
 
 
@@ -93,5 +96,6 @@ class UnnormalizedCorr(nn.Module):
         var_out = delta_out.pow(2).mean(0, keepdim=True)
         var_target = delta_target.pow(2).mean(0, keepdim=True)
 
-        corrs = (delta_out * delta_target).sum(0, keepdim=True) / ((var_out + self.eps) * (var_target + self.eps)).sqrt()
+        corrs = (delta_out * delta_target).sum(0, keepdim=True) / (
+                (var_out + self.eps) * (var_target + self.eps)).sqrt()
         return corrs, delta_out.size(0)
