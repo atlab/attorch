@@ -38,6 +38,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
         switch_mode: whether to switch model's train mode into eval prior to objective evaluation. If True (default),
                      the model is switched to eval mode before objective evaluation and restored to its previous mode
                      after the evaluation.
+        restore_best: whether to restore the best scoring model state at the end of early stopping
 
     """
     training_status = model.training
