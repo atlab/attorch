@@ -395,7 +395,7 @@ class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
         self.positive = positive
         self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
-        self.features_scale = Parameter(torch.Tensor(1, scale_n+1, 1, outdims))
+        self.feature_scales = Parameter(torch.Tensor(1, scale_n + 1, 1, outdims))
         self.feature_channels = Parameter(torch.Tensor(1, 1, c, outdims))
 
         if bias:
@@ -408,13 +408,13 @@ class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
 
     @property
     def features(self):
-        return (self.features_scale * self.feature_channels).view(1, -1, 1, self.outdims)
+        return (self.feature_scales * self.feature_channels).view(1, -1, 1, self.outdims)
 
     def scale_l1(self, average=True):
         if average:
-            return self.feature_scale.abs().mean()
+            return self.feature_scales.abs().mean()
         else:
-            return self.features_scale.abs().sum()
+            return self.feature_scales.abs().sum()
 
     def channel_l1(self, average=True):
         if average:
@@ -424,7 +424,7 @@ class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
 
     def initialize(self):
         self.grid.data.uniform_(-self.init_range, self.init_range)
-        self.features_scale.data.fill_(1 / np.sqrt(self.in_shape[0]))
+        self.feature_scales.data.fill_(1 / np.sqrt(self.in_shape[0]))
         self.feature_channels.data.fill_(1 / np.sqrt(self.in_shape[0]))
 
         if self.bias is not None:
