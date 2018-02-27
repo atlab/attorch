@@ -385,6 +385,52 @@ class SpatialTransformerPyramid2d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
+class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
+    def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
+                 init_range=.1, downsample=True, type=None):
+        super(SpatialTransformerPyramid2d, self).__init__()
+        self.in_shape = in_shape
+        c, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        self.feature_scales = Parameter(torch.Tensor(1, scale_n + 1, 1, outdims))
+        self.feature_channels = Parameter(torch.Tensor(1, 1, c, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+        self.init_range = init_range
+        self.initialize()
+
+    @property
+    def features(self):
+        return (self.feature_scales * self.feature_channels).view(1, -1, 1, self.outdims)
+
+    def scale_l1(self, average=True):
+        if average:
+            return self.feature_scales.abs().mean()
+        else:
+            return self.feature_scales.abs().sum()
+
+    def channel_l1(self, average=True):
+        if average:
+            return self.feature_channels.abs().mean()
+        else:
+            return self.feature_channels.abs().sum()
+
+    def initialize(self):
+        self.grid.data.uniform_(-self.init_range, self.init_range)
+        self.feature_scales.data.fill_(1 / np.sqrt(self.in_shape[0]))
+        self.feature_channels.data.fill_(1 / np.sqrt(self.in_shape[0]))
+
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+
 
 class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
@@ -803,7 +849,7 @@ def conv2d_config(in_shape, out_shape, kernel_size, stride=None):
                    or [channel, height, width]
         kernel_size: shape of the kernel. May be an integer or a pair tuple
         stride: (OPTIONAL) desired stride to be used. If not provided, optimal stride size
-                will be computed and returned to minimize the necesssary amount of padding
+                will be computed and returned to minimize the necessary amount of padding
                 or stripping.
 
     Returns:
