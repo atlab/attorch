@@ -388,7 +388,7 @@ class SpatialTransformerPyramid2d(nn.Module):
 class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
     def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
                  init_range=.1, downsample=True, type=None):
-        super(SpatialTransformerPyramid2d).__init__()
+        super(SpatialTransformerPyramid2d, self).__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
