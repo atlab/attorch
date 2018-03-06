@@ -6,6 +6,9 @@ from torch.utils.data import Dataset
 import numpy as np
 from torch.autograd import Variable
 
+class Invertible:
+    def inv(self, y):
+        raise NotImplemented('Subclasses of Invertible must implement an inv method')
 
 class DataTransform:
     def initialize(self, dataset):
@@ -33,6 +36,15 @@ class SubsampleNeurons(DataTransform):
 
     def __call__(self, item):
         return tuple(it[sub] for sub, it in zip(self._subsamp, item))
+
+
+class Neurons2Behavior(DataTransform):
+    def __init__(self, idx):
+        super().__init__()
+        self.idx = idx
+
+    def __call__(self, item):
+        return tuple((item[0], np.hstack((item[1], item[3][~self.idx])), item[2], item[3][self.idx]))
 
 
 class TransformFromFuncs(DataTransform):
@@ -131,7 +143,7 @@ class H5SequenceSet(Dataset):
             assert key in self._fid, 'Could not find {} in file'.format(key)
             l = len(self._fid[key])
             if m is not None and l != m:
-                raise  ValueError('groups have different length')
+                raise ValueError('groups have different length')
             m = l
         self._len = m
 
@@ -145,6 +157,14 @@ class H5SequenceSet(Dataset):
         for tr in self.transforms:
             if exclude is None or not isinstance(tr, exclude):
                 x = tr(x)
+        return x
+
+    def invert(self, x, exclude=None):
+        for tr in reversed(filter(lambda tr: not isinstance(tr, exclude), self.transforms)):
+            if not isinstance(tr, Invertible):
+                raise TypeError('Cannot invert', tr.__class__.__name__)
+            else:
+                x = tr.inv(x)
         return x
 
     def __getitem__(self, item):
@@ -168,7 +188,7 @@ class H5SequenceSet(Dataset):
             item = self._fid[item]
             if isinstance(item, h5py._hl.dataset.Dataset):
                 item = item.value
-                if item.dtype.char == 'S': # convert bytes to univcode
+                if item.dtype.char == 'S':  # convert bytes to univcode
                     item = item.astype(str)
                 return item
             return item

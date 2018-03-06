@@ -385,6 +385,52 @@ class SpatialTransformerPyramid2d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
+class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
+    def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
+                 init_range=.1, downsample=True, type=None):
+        super(SpatialTransformerPyramid2d, self).__init__()
+        self.in_shape = in_shape
+        c, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        self.feature_scales = Parameter(torch.Tensor(1, scale_n + 1, 1, outdims))
+        self.feature_channels = Parameter(torch.Tensor(1, 1, c, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+        self.init_range = init_range
+        self.initialize()
+
+    @property
+    def features(self):
+        return (self.feature_scales * self.feature_channels).view(1, -1, 1, self.outdims)
+
+    def scale_l1(self, average=True):
+        if average:
+            return self.feature_scales.abs().mean()
+        else:
+            return self.feature_scales.abs().sum()
+
+    def channel_l1(self, average=True):
+        if average:
+            return self.feature_channels.abs().mean()
+        else:
+            return self.feature_channels.abs().sum()
+
+    def initialize(self):
+        self.grid.data.uniform_(-self.init_range, self.init_range)
+        self.feature_scales.data.fill_(1 / np.sqrt(self.in_shape[0]))
+        self.feature_channels.data.fill_(1 / np.sqrt(self.in_shape[0]))
+
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
+
 
 class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
@@ -405,7 +451,7 @@ class SpatialTransformerPooled2d(nn.Module):
             self.register_parameter('bias', None)
 
         self.pool_kern = pool_kern
-        self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern)
+        self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern, count_include_pad=False)
         self.init_range = init_range
         self.initialize()
 
@@ -573,16 +619,16 @@ class SpatialTransformerPyramid3d(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def feature_l1(self, average=True, subsample=None):
-        if subsample is not None: raise NotImplemented('Subsample is not implemented.')
+    def feature_l1(self, average=True, subs_idx=None):
+        if subs_idx is not None: raise NotImplemented('Subsample is not implemented.')
 
         if average:
             return self.features.abs().mean()
         else:
             return self.features.abs().sum()
 
-    def forward(self, x, shift=None, subsample=None):
-        if subsample is not None: raise NotImplemented('Subsample is not implemented.')
+    def forward(self, x, shift=None, subs_idx=None):
+        if subs_idx is not None: raise NotImplemented('Subsample is not implemented.')
 
         if self.positive:
             positive(self.features)
@@ -641,7 +687,7 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2))
+        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2), count_include_pad=False)
         self.init_range = init_range
         self.initialize()
 
@@ -653,25 +699,25 @@ class SpatialTransformerPooled3d(nn.Module):
         if self.bias is not None:
             self.bias.data.fill_(0)
 
-    def feature_l1(self, average=True, subsample=None):
-        subsample = subsample if subsample is not None else slice(None)
+    def feature_l1(self, average=True, subs_idx=None):
+        subs_idx = subs_idx if subs_idx is not None else slice(None)
         if average:
-            return self.features[..., subsample].abs().mean()
+            return self.features[..., subs_idx].abs().mean()
         else:
-            return self.features[..., subsample].abs().sum()
+            return self.features[..., subs_idx].abs().sum()
 
-    def forward(self, x, shift=None, subsample=None):
+    def forward(self, x, shift=None, subs_idx=None):
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
 
         N, c, t, w, h = x.size()
         m = self.pool_steps + 1
-        if subsample is not None:
-            feat = self.features[..., subsample].contiguous()
+        if subs_idx is not None:
+            feat = self.features[..., subs_idx].contiguous()
             outdims = feat.size(-1)
             feat = feat.view(1, m * c, outdims)
-            grid = self.grid[:, subsample, ...]
+            grid = self.grid[:, subs_idx, ...]
         else:
             grid = self.grid
             feat = self.features.view(1, m * c, self.outdims)
@@ -692,10 +738,10 @@ class SpatialTransformerPooled3d(nn.Module):
         y = (y.squeeze(-1) * feat).sum(1).view(N, t, outdims)
 
         if self.bias is not None:
-            if subsample is None:
+            if subs_idx is None:
                 y = y + self.bias
             else:
-                y = y + self.bias[subsample]
+                y = y + self.bias[subs_idx]
 
         return y
 
@@ -709,16 +755,20 @@ class SpatialTransformerPooled3d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
-
-class BiasBatchNorm2d(nn.BatchNorm2d):
+class BiasBatchNorm2d(nn.Module):
     def __init__(self, features, **kwargs):
         kwargs['affine'] = False
-        super().__init__(features, **kwargs)
-        self.bias = nn.Parameter(torch.Tensor(features))
+        super().__init__()
+        self.bn = nn.BatchNorm2d(features, **kwargs)
+        self.bias = nn.Parameter(torch.Tensor(1, features, 1, 1))
         self.initialize()
 
     def initialize(self):
-        self.bias.data.fill_(0.)
+        self.bn.reset_parameters()
+        self.bias.data.zero_()
+
+    def forward(self, x):
+        return self.bn(x) + self.bias
 
 
 class BiasBatchNorm3d(nn.BatchNorm3d):

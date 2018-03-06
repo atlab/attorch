@@ -1,4 +1,4 @@
-FROM eywalker/pytorch-jupyter:cuda9.0
+FROM eywalker/pytorch-jupyter:cuda9.1
 
 # Install latest DataJoint
 RUN apt-get -y update && apt-get -y install ffmpeg libhdf5-10
