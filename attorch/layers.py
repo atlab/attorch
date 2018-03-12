@@ -755,20 +755,36 @@ class SpatialTransformerPooled3d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
-class BiasBatchNorm2d(nn.Module):
+# class BiasBatchNorm2d(nn.Module):
+#     def __init__(self, features, **kwargs):
+#         kwargs['affine'] = False
+#         super().__init__()
+#         self.bn = nn.BatchNorm2d(features, **kwargs)
+#         self.bias = nn.Parameter(torch.Tensor(1, features, 1, 1))
+#         self.initialize()
+#
+#     def initialize(self):
+#         self.bn.reset_parameters()
+#         self.bias.data.zero_()
+#
+#     def forward(self, x):
+#         return self.bn(x) + self.bias
+
+
+class BiasBatchNorm2d(nn.BatchNorm2d):
     def __init__(self, features, **kwargs):
         kwargs['affine'] = False
-        super().__init__()
-        self.bn = nn.BatchNorm2d(features, **kwargs)
-        self.bias = nn.Parameter(torch.Tensor(1, features, 1, 1))
+        super().__init__(features, **kwargs)
+        self.offset = nn.Parameter(torch.Tensor(1, features, 1, 1))
         self.initialize()
 
     def initialize(self):
-        self.bn.reset_parameters()
-        self.bias.data.zero_()
+        self.reset_parameters()
+        self.offset.data.zero_()
 
     def forward(self, x):
-        return self.bn(x) + self.bias
+        x = super().forward(x)
+        return x + self.offset
 
 
 class BiasBatchNorm3d(nn.BatchNorm3d):
