@@ -302,13 +302,13 @@ class SpatialXFeatureLinear(nn.Module):
 
 class SpatialTransformerPyramid2d(nn.Module):
     def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
-                 init_range=.1, downsample=True, type=None):
+                 init_range=.1, downsample=True, _skip_upsampling=False, type=None):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling, type=type)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
@@ -384,6 +384,52 @@ class SpatialTransformerPyramid2d(nn.Module):
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
+
+class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
+    def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
+                 init_range=.1, downsample=True, type=None):
+        super(SpatialTransformerPyramid2d, self).__init__()
+        self.in_shape = in_shape
+        c, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
+        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        self.feature_scales = Parameter(torch.Tensor(1, scale_n + 1, 1, outdims))
+        self.feature_channels = Parameter(torch.Tensor(1, 1, c, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+        self.init_range = init_range
+        self.initialize()
+
+    @property
+    def features(self):
+        return (self.feature_scales * self.feature_channels).view(1, -1, 1, self.outdims)
+
+    def scale_l1(self, average=True):
+        if average:
+            return self.feature_scales.abs().mean()
+        else:
+            return self.feature_scales.abs().sum()
+
+    def channel_l1(self, average=True):
+        if average:
+            return self.feature_channels.abs().mean()
+        else:
+            return self.feature_channels.abs().sum()
+
+    def initialize(self):
+        self.grid.data.uniform_(-self.init_range, self.init_range)
+        self.feature_scales.data.fill_(1 / np.sqrt(self.in_shape[0]))
+        self.feature_channels.data.fill_(1 / np.sqrt(self.in_shape[0]))
+
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+
 
 
 class SpatialTransformerPooled2d(nn.Module):
@@ -547,13 +593,13 @@ class SpatialXFeatureLinear3d(nn.Module):
 
 class SpatialTransformerPyramid3d(nn.Module):
     def __init__(self, in_shape, outdims, scale_n=4, positive=True, bias=True, init_range=.05, downsample=True,
-                 type=None):
+                 _skip_upsampling=False, type=None):
         super().__init__()
         self.in_shape = in_shape
         c, _, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
+        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling, type=type)
 
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
@@ -709,16 +755,36 @@ class SpatialTransformerPooled3d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
-
-class BiasBatchNorm2d(nn.BatchNorm2d):
+class BiasBatchNorm2d(nn.Module):
     def __init__(self, features, **kwargs):
         kwargs['affine'] = False
-        super().__init__(features, **kwargs)
-        self.bias = nn.Parameter(torch.Tensor(features))
+        super().__init__()
+        self.bn = nn.BatchNorm2d(features, **kwargs)
+        self.bias = nn.Parameter(torch.Tensor(1, features, 1, 1))
         self.initialize()
 
     def initialize(self):
-        self.bias.data.fill_(0.)
+        self.bn.reset_parameters()
+        self.bias.data.zero_()
+
+    def forward(self, x):
+        return self.bn(x) + self.bias
+
+#
+# class BiasBatchNorm2d(nn.BatchNorm2d):
+#     def __init__(self, features, **kwargs):
+#         kwargs['affine'] = False
+#         super().__init__(features, **kwargs)
+#         self.offset = nn.Parameter(torch.Tensor(1, features, 1, 1))
+#         self.initialize()
+#
+#     def initialize(self):
+#         self.reset_parameters()
+#         self.offset.data.zero_()
+#
+#     def forward(self, x):
+#         x = super().forward(x)
+#         return x + self.offset
 
 
 class BiasBatchNorm3d(nn.BatchNorm3d):
@@ -803,7 +869,7 @@ def conv2d_config(in_shape, out_shape, kernel_size, stride=None):
                    or [channel, height, width]
         kernel_size: shape of the kernel. May be an integer or a pair tuple
         stride: (OPTIONAL) desired stride to be used. If not provided, optimal stride size
-                will be computed and returned to minimize the necesssary amount of padding
+                will be computed and returned to minimize the necessary amount of padding
                 or stripping.
 
     Returns:
@@ -906,10 +972,19 @@ class Pyramid(nn.Module):
 
     }
 
-    def __init__(self, scale_n=4, type='gauss5x5', downsample=True):
+    def __init__(self, scale_n=4, type='gauss5x5', downsample=True, _skip_upsampling=False):
+        """
+        Setup Laplace image pyramid
+        Args:
+            scale_n: number of Laplace pyramid layers to construct
+            type: type of Gaussian filter used in pyramid construction. Valid options are: 'gauss5x5', 'gauss3x3', and 'laplace5x5'
+            downsample: whether to downsample the image in each layer. Defaults to True
+            _skip_upsampling: Present for legacy reasons. Set to False (default) to get correct behavior.
+        """
         super().__init__()
         self.type = type
         self.downsample = downsample
+        self._skip_upsampling = _skip_upsampling
         h = self._filter_dict[type]
         self.register_buffer('filter', torch.from_numpy(h))
         self.scale_n = scale_n
@@ -918,18 +993,30 @@ class Pyramid(nn.Module):
         self._filter_cache = None
 
     def lap_split(self, img):
-        N, c, *_ = img.size()
+        N, c, h, w = img.size()
         if self._filter_cache is not None and self._filter_cache.size(0) == c:
             filter = self._filter_cache
         else:
             filter = Variable(self.filter.expand(c, 1, self._kern, self._kern)).contiguous()
             self._filter_cache = filter
-        lo = F.conv2d(img, filter, padding=self._pad, groups=c)
-        hi = img - lo
+
+        # the necessary output padding depends on even/odd of the dimension
+        output_padding = (h + 1) % 2, (w + 1) % 2
+
+        smooth = F.conv2d(img, filter, padding=self._pad, groups=c)
         if self.downsample:
-            return lo[:, :, ::2, ::2], hi
+            lo = smooth[:, :, ::2, ::2]
+            if self._skip_upsampling:
+                lo2 = smooth
+            else:
+                lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding, groups=c)
         else:
-            return lo, hi
+            lo = lo2 = smooth
+
+        hi = img - lo2
+
+        return lo, hi
+
 
     def forward(self, img):
         levels = []
@@ -940,5 +1027,5 @@ class Pyramid(nn.Module):
         return levels
 
     def __repr__(self):
-        return "Pyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample}, type={type})".format(
+        return "Pyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample}, _skip_upsampling={_skip_upsampling}, type={type})".format(
             **self.__dict__)

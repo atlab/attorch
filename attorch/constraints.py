@@ -12,6 +12,11 @@ def constrain_all(self):
 nn.Module.constrain_all = constrain_all
 
 
+# all constrain function takes an optional cache argument
+# the cache can be used to store a relatively expensive reusable
+# item usable in the constraining. For example, the cache can store the
+# binary map of all units that should be constrained.
+
 def positive(weight, cache=None):
     weight.data *= weight.data.ge(0).float()
     return cache
