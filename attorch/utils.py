@@ -9,6 +9,26 @@ from torch.autograd import Variable
 import torch
 import time
 
+import sys
+
+class silent:
+    """
+    Context manager to temporarily suppress stdout prints
+
+    Examples:
+        with silent():
+          code_that_would_print_stuff()
+    """
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = None
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout = self._original_stdout
+
+
+
+
 
 def namedtuple_with_defaults(typename, field_names, default_values=()):
     """
