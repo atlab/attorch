@@ -13,5 +13,5 @@ setup(
     url='https://github.com/atlab/attorch',
     packages=find_packages(exclude=[]),
     install_requires=['numpy', 'tqdm','gitpython','python-twitter','scikit-image', 'datajoint',
-                      'pytorch-fft', 'atflow', 'torch'],
+                      'pytorch-fft', 'cffi', 'atflow', 'torch'],
 )
