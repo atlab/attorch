@@ -628,29 +628,40 @@ class SpatialTransformerPyramid3d(nn.Module):
             return self.features.abs().sum()
 
     def forward(self, x, shift=None, subs_idx=None):
-        if subs_idx is not None: raise NotImplemented('Subsample is not implemented.')
-
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
+
         N, c, t, w, h = x.size()
         m = self.gauss.scale_n + 1
-        feat = self.features.view(1, m * c, self.outdims)
+
+        if subs_idx is not None:
+            feat = self.features[..., subs_idx].contiguous()
+            outdims = feat.size(-1)
+            feat = feat.view(1, m * c, outdims)
+            grid = self.grid[:, subs_idx, ...]
+        else:
+            grid = self.grid
+            feat = self.features.view(1, m * c, self.outdims)
+            outdims = self.outdims
 
         if shift is None:
-            grid = self.grid.expand(N * t, self.outdims, 1, 2)
+            grid = grid.expand(N * t, outdims, 1, 2)
         else:
-            grid = self.grid.expand(N, self.outdims, 1, 2)
+            grid = grid.expand(N, outdims, 1, 2)
             grid = torch.stack([grid + shift[:, i, :][:, None, None, :] for i in range(t)], 1)
-            grid = grid.contiguous().view(-1, self.outdims, 1, 2)
+            grid = grid.contiguous().view(-1, outdims, 1, 2)
 
         z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
         pools = [F.grid_sample(x, grid) for x in self.gauss(z)]
         y = torch.cat(pools, dim=1).squeeze(-1)
-        y = (y * feat).sum(1).view(N, t, self.outdims)
+        y = (y * feat).sum(1).view(N, t, outdims)
 
         if self.bias is not None:
-            y = y + self.bias
+            if subs_idx is None:
+                y = y + self.bias
+            else:
+                y = y + self.bias[subs_idx]
         return y
 
     def __repr__(self):
