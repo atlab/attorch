@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from itertools import product
 from torch.nn import functional as F
-import pytorch_fft.fft as fft
+#import pytorch_fft.fft as fft
 
 # def laplace():
 #     return np.array([[0.25, 0.5, 0.25], [0.5, -3.0, 0.5], [0.25, 0.5, 0.25]]).astype(np.float32)[None, None, ...]
@@ -25,23 +25,23 @@ def laplace3d():
     return l.astype(np.float32)[None, None, ...]
 
 
-def fft_smooth(grad, factor=1/4):
-    """
-    Tones down the gradient with (1/f)**(2 * factor) filter in the Fourier domain.
-    Equivalent to low-pass filtering in the spatial domain.
-
-    `grad` is an at least 2D CUDA Tensor, where the last two dimensions are treated
-    as images to apply smoothening transformation.
-
-    `factor` controls the strength of the fall off.
-    """
-    h, w = grad.size()[-2:]
-    tw = np.minimum(np.arange(0, w), np.arange(w, 0, -1), dtype=np.float32)#[-(w+2)//2:]
-    th = np.minimum(np.arange(0, h), np.arange(h, 0, -1), dtype=np.float32)
-    t = 1 / np.maximum(1.0, (tw[None,:] ** 2 + th[:,None] ** 2) ** (factor))
-    F = torch.Tensor(t / t.mean()).cuda()
-    rp, ip = fft.fft2(grad.data, torch.zeros_like(grad.data))
-    return Variable(fft.ifft2(rp * F, ip * F)[0])
+#def fft_smooth(grad, factor=1/4):
+#    """
+#    Tones down the gradient with (1/f)**(2 * factor) filter in the Fourier domain.
+#    Equivalent to low-pass filtering in the spatial domain.
+#
+#    `grad` is an at least 2D CUDA Tensor, where the last two dimensions are treated
+#    as images to apply smoothening transformation.
+#
+#    `factor` controls the strength of the fall off.
+#    """
+#    h, w = grad.size()[-2:]
+#    tw = np.minimum(np.arange(0, w), np.arange(w, 0, -1), dtype=np.float32)#[-(w+2)//2:]
+#    th = np.minimum(np.arange(0, h), np.arange(h, 0, -1), dtype=np.float32)
+#    t = 1 / np.maximum(1.0, (tw[None,:] ** 2 + th[:,None] ** 2) ** (factor))
+#    F = torch.Tensor(t / t.mean()).cuda()
+#    rp, ip = fft.fft2(grad.data, torch.zeros_like(grad.data))
+#    return Variable(fft.ifft2(rp * F, ip * F)[0])
 
 
 class Laplace(nn.Module):
