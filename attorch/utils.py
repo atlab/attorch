@@ -11,7 +11,7 @@ import time
 
 import sys
 
-class silent:
+class silence:
     """
     Context manager to temporarily suppress stdout prints
 

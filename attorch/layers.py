@@ -990,15 +990,10 @@ class Pyramid(nn.Module):
         self.scale_n = scale_n
         self._kern = h.shape[0]
         self._pad = self._kern // 2
-        self._filter_cache = None
 
     def lap_split(self, img):
         N, c, h, w = img.size()
-        if self._filter_cache is not None and self._filter_cache.size(0) == c:
-            filter = self._filter_cache
-        else:
-            filter = Variable(self.filter.expand(c, 1, self._kern, self._kern)).contiguous()
-            self._filter_cache = filter
+        filter = Variable(self.filter.expand(c, 1, self._kern, self._kern))
 
         # the necessary output padding depends on even/odd of the dimension
         output_padding = (h + 1) % 2, (w + 1) % 2
