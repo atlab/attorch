@@ -308,7 +308,8 @@ class SpatialTransformerPyramid2d(nn.Module):
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling, type=type)
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling,
+                                     type=type)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
@@ -385,6 +386,7 @@ class SpatialTransformerPyramid2d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
+
 class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
     def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
                  init_range=.1, downsample=True, type=None):
@@ -429,7 +431,6 @@ class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
 
         if self.bias is not None:
             self.bias.data.fill_(0)
-
 
 
 class SpatialTransformerPooled2d(nn.Module):
@@ -628,40 +629,29 @@ class SpatialTransformerPyramid3d(nn.Module):
             return self.features.abs().sum()
 
     def forward(self, x, shift=None, subs_idx=None):
+        if subs_idx is not None: raise NotImplemented('Subsample is not implemented.')
+
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
-
         N, c, t, w, h = x.size()
         m = self.gauss.scale_n + 1
-
-        if subs_idx is not None:
-            feat = self.features[..., subs_idx].contiguous()
-            outdims = feat.size(-1)
-            feat = feat.view(1, m * c, outdims)
-            grid = self.grid[:, subs_idx, ...]
-        else:
-            grid = self.grid
-            feat = self.features.view(1, m * c, self.outdims)
-            outdims = self.outdims
+        feat = self.features.view(1, m * c, self.outdims)
 
         if shift is None:
-            grid = grid.expand(N * t, outdims, 1, 2)
+            grid = self.grid.expand(N * t, self.outdims, 1, 2)
         else:
-            grid = grid.expand(N, outdims, 1, 2)
+            grid = self.grid.expand(N, self.outdims, 1, 2)
             grid = torch.stack([grid + shift[:, i, :][:, None, None, :] for i in range(t)], 1)
-            grid = grid.contiguous().view(-1, outdims, 1, 2)
+            grid = grid.contiguous().view(-1, self.outdims, 1, 2)
 
         z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
         pools = [F.grid_sample(x, grid) for x in self.gauss(z)]
         y = torch.cat(pools, dim=1).squeeze(-1)
-        y = (y * feat).sum(1).view(N, t, outdims)
+        y = (y * feat).sum(1).view(N, t, self.outdims)
 
         if self.bias is not None:
-            if subs_idx is None:
-                y = y + self.bias
-            else:
-                y = y + self.bias[subs_idx]
+            y = y + self.bias
         return y
 
     def __repr__(self):
@@ -682,14 +672,17 @@ class SpatialTransformerPooled3d(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, init_range=.05):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, init_range=.05, grid=None):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
         c, t, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        if grid is None:
+            self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        else:
+            self.grid = grid
         self.features = Parameter(torch.Tensor(1, c * (self.pool_steps + 1), 1, outdims))
 
         if bias:
@@ -766,6 +759,7 @@ class SpatialTransformerPooled3d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
+
 class BiasBatchNorm2d(nn.Module):
     def __init__(self, features, **kwargs):
         kwargs['affine'] = False
@@ -780,6 +774,7 @@ class BiasBatchNorm2d(nn.Module):
 
     def forward(self, x):
         return self.bn(x) + self.bias
+
 
 #
 # class BiasBatchNorm2d(nn.BatchNorm2d):
@@ -1020,14 +1015,14 @@ class Pyramid(nn.Module):
             if self._skip_upsampling:
                 lo2 = smooth
             else:
-                lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding, groups=c)
+                lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding,
+                                             groups=c)
         else:
             lo = lo2 = smooth
 
         hi = img - lo2
 
         return lo, hi
-
 
     def forward(self, img):
         levels = []
