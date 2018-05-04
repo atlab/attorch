@@ -672,7 +672,7 @@ class SpatialTransformerPooled3d(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, init_range=.05, grid=None):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, init_range=.05, grid=None, stop_grad=False):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -694,6 +694,7 @@ class SpatialTransformerPooled3d(nn.Module):
         self.avg = nn.AvgPool2d((2, 2), stride=(2, 2), count_include_pad=False)
         self.init_range = init_range
         self.initialize()
+        self.stop_grad = stop_grad
 
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
@@ -711,6 +712,9 @@ class SpatialTransformerPooled3d(nn.Module):
             return self.features[..., subs_idx].abs().sum()
 
     def forward(self, x, shift=None, subs_idx=None):
+        if self.stop_grad:
+            x = x.detach()
+
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
