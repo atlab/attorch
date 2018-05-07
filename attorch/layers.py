@@ -672,7 +672,8 @@ class SpatialTransformerPooled3d(nn.Module):
     Gaussian over spatial dimensions.
     """
 
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, init_range=.05, grid=None, stop_grad=False):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
+                 init_range=.05, kernel_size=2, stride=2, grid=None, stop_grad=False):
         super().__init__()
         self.pool_steps = pool_steps
         self.in_shape = in_shape
@@ -691,7 +692,7 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2), count_include_pad=False)
+        self.avg = nn.AvgPool2d(kernel_size, stride=stride, count_include_pad=False)
         self.init_range = init_range
         self.initialize()
         self.stop_grad = stop_grad
