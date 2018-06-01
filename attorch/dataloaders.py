@@ -16,6 +16,5 @@ class RepeatsBatchSampler(Sampler):
         for u in self.repeat_index:
             yield list(self.subset_index[self.repeat_sets == u])
 
-
     def __len__(self):
         return len(self.repeat_index)
