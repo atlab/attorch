@@ -1,5 +1,4 @@
 import torch.nn as nn
-from torch.autograd import Variable
 from torch.nn import functional as F
 from torch.nn.modules.loss import _assert_no_grad, BCELoss
 import torch

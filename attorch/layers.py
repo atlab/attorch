@@ -7,7 +7,6 @@ from .constraints import positive
 from torch import nn as nn
 from torch.nn import functional as F
 from torch.nn.modules.utils import _pair
-from torch.autograd import Variable
 import numpy as np
 from math import ceil
 # from .module import Module
@@ -49,90 +48,6 @@ class AdjustedElu(nn.Module):
 
     def forward(self, x):
         return F.elu(x - 1.) + 1.
-
-
-# TODO if that's not needed, we should replace it by a padding and a convlayer in the future
-class Conv2dPad(nn.Conv2d):
-    """
-    Padded Conv2d layer. Pads with reflect by default.
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size, pad=None, mode='reflect', **kwargs):
-        assert 'padding' not in kwargs, 'You need to use `pad` not `padding`'
-        self.padding = _pair(0)
-        super().__init__(in_channels, out_channels, kernel_size, padding=0, **kwargs)
-        self.mode = mode
-
-        if isinstance(pad, tuple) or pad is None:
-            self.pad = pad
-        else:
-            self.pad = 4 * (pad,)
-
-    def _pad(self, input):
-        if self.pad is not None and self.pad != 4 * (0,):
-            input = F.pad(input, mode=self.mode, pad=self.pad)
-        return input
-
-    def forward(self, input):
-        input = self._pad(input)
-        return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-
-
-class FullLinear(nn.Module):
-    """
-    Fully connected linear readout from image-like input with c x w x h into a vector output
-    """
-
-    def __init__(self, in_shape, outdims, bias=True):
-        super().__init__()
-        self.in_shape = in_shape
-        self.outdims = outdims
-
-        c, w, h = in_shape
-
-        self.raw_weight = Parameter(torch.Tensor(self.outdims, c, w, h))
-
-        if bias:
-            self.bias = Parameter(torch.Tensor(self.outdims))
-        else:
-            self.register_parameter('bias', None)
-
-        self.initialize()
-
-    def initialize(self, init_noise=1e-3):
-        self.raw_weight.data.normal_(0, init_noise)
-        if self.bias is not None:
-            self.bias.data.fill_(0)
-
-    @property
-    def weight(self):
-        return self.raw_weight.view(self.outdims, -1)
-
-    def l1(self, average=True):
-        if average:
-            return self.weight.abs().mean()
-        else:
-            return self.weight.abs().sum()
-
-    def l2(self, average=True):
-        if average:
-            return self.weight.pow(2).mean()
-        else:
-            return self.weight.pow(2).sum()
-
-    def forward(self, x):
-        N = x.size(0)
-        y = x.view(N, -1) @ self.weight.t()
-        if self.bias is not None:
-            y = y + self.bias.expand_as(y)
-        return y
-
-    def __repr__(self):
-        r = self.__class__.__name__ + \
-            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
-        if self.bias is not None:
-            r += ' with bias'
-        return r
 
 
 class WidthXHeightXFeatureLinear(nn.Module):
@@ -302,14 +217,13 @@ class SpatialXFeatureLinear(nn.Module):
 
 class SpatialTransformerPyramid2d(nn.Module):
     def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
-                 init_range=.1, downsample=True, _skip_upsampling=False, type=None):
+                 init_range=.1, downsample=True, type=None):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling,
-                                     type=type)
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
@@ -594,13 +508,13 @@ class SpatialXFeatureLinear3d(nn.Module):
 
 class SpatialTransformerPyramid3d(nn.Module):
     def __init__(self, in_shape, outdims, scale_n=4, positive=True, bias=True, init_range=.05, downsample=True,
-                 _skip_upsampling=False, type=None):
+                 type=None):
         super().__init__()
         self.in_shape = in_shape
         c, _, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling, type=type)
+        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
 
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
@@ -763,50 +677,6 @@ class SpatialTransformerPooled3d(nn.Module):
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
-
-
-class BiasBatchNorm2d(nn.Module):
-    def __init__(self, features, **kwargs):
-        kwargs['affine'] = False
-        super().__init__()
-        self.bn = nn.BatchNorm2d(features, **kwargs)
-        self.bias = nn.Parameter(torch.Tensor(1, features, 1, 1))
-        self.initialize()
-
-    def initialize(self):
-        self.bn.reset_parameters()
-        self.bias.data.zero_()
-
-    def forward(self, x):
-        return self.bn(x) + self.bias
-
-
-#
-# class BiasBatchNorm2d(nn.BatchNorm2d):
-#     def __init__(self, features, **kwargs):
-#         kwargs['affine'] = False
-#         super().__init__(features, **kwargs)
-#         self.offset = nn.Parameter(torch.Tensor(1, features, 1, 1))
-#         self.initialize()
-#
-#     def initialize(self):
-#         self.reset_parameters()
-#         self.offset.data.zero_()
-#
-#     def forward(self, x):
-#         x = super().forward(x)
-#         return x + self.offset
-
-
-class BiasBatchNorm3d(nn.BatchNorm3d):
-    def __init__(self, features, **kwargs):
-        kwargs['affine'] = False
-        super().__init__(features, **kwargs)
-        self.bias = nn.Parameter(torch.Tensor(features))
-        self.initialize()
-
-    def initialize(self):
-        self.bias.data.fill_(0.)
 
 
 class ExtendedConv2d(nn.Conv2d):
@@ -983,19 +853,17 @@ class Pyramid(nn.Module):
 
     }
 
-    def __init__(self, scale_n=4, type='gauss5x5', downsample=True, _skip_upsampling=False):
+    def __init__(self, scale_n=4, type='gauss5x5', downsample=True):
         """
         Setup Laplace image pyramid
         Args:
             scale_n: number of Laplace pyramid layers to construct
             type: type of Gaussian filter used in pyramid construction. Valid options are: 'gauss5x5', 'gauss3x3', and 'laplace5x5'
             downsample: whether to downsample the image in each layer. Defaults to True
-            _skip_upsampling: Present for legacy reasons. Set to False (default) to get correct behavior.
         """
         super().__init__()
         self.type = type
         self.downsample = downsample
-        self._skip_upsampling = _skip_upsampling
         h = self._filter_dict[type]
         self.register_buffer('filter', torch.from_numpy(h))
         self.scale_n = scale_n
@@ -1008,7 +876,7 @@ class Pyramid(nn.Module):
         if self._filter_cache is not None and self._filter_cache.size(0) == c:
             filter = self._filter_cache
         else:
-            filter = Variable(self.filter.expand(c, 1, self._kern, self._kern)).contiguous()
+            filter = self.filter.expand(c, 1, self._kern, self._kern)
             self._filter_cache = filter
 
         # the necessary output padding depends on even/odd of the dimension
@@ -1017,11 +885,8 @@ class Pyramid(nn.Module):
         smooth = F.conv2d(img, filter, padding=self._pad, groups=c)
         if self.downsample:
             lo = smooth[:, :, ::2, ::2]
-            if self._skip_upsampling:
-                lo2 = smooth
-            else:
-                lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding,
-                                             groups=c)
+            lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding,
+                                         groups=c)
         else:
             lo = lo2 = smooth
 
@@ -1038,5 +903,5 @@ class Pyramid(nn.Module):
         return levels
 
     def __repr__(self):
-        return "Pyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample}, _skip_upsampling={_skip_upsampling}, type={type})".format(
+        return "Pyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample}, type={type})".format(
             **self.__dict__)

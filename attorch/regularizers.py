@@ -1,5 +1,4 @@
 import torch.nn as nn
-from torch.autograd import Variable
 import numpy as np
 import torch
 from itertools import product
@@ -34,7 +33,7 @@ class Laplace(nn.Module):
         self.register_buffer('filter', torch.from_numpy(laplace()))
 
     def forward(self, x):
-        return F.conv2d(x, Variable(self.filter), bias=None)
+        return F.conv2d(x, self.filter, bias=None)
 
 
 class Laplace3d(nn.Module):
@@ -47,7 +46,7 @@ class Laplace3d(nn.Module):
         self.register_buffer('filter', torch.from_numpy(laplace3d()))
 
     def forward(self, x):
-        return F.conv3d(x, Variable(self.filter), bias=None)
+        return F.conv3d(x, self.filter, bias=None)
 
 
 class LaplaceL2(nn.Module):
