@@ -876,7 +876,7 @@ class Pyramid(nn.Module):
         if self._filter_cache is not None and self._filter_cache.size(0) == c:
             filter = self._filter_cache
         else:
-            filter = self.filter.expand(c, 1, self._kern, self._kern)
+            filter = self.filter.expand(c, 1, self._kern, self._kern).contiguous()
             self._filter_cache = filter
 
         # the necessary output padding depends on even/odd of the dimension
