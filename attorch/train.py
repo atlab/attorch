@@ -59,6 +59,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
     while patience_counter < patience and epoch < max_iter:
         for _ in range(interval):
             epoch += 1
+            if epoch == max_iter: break
             yield epoch, current_objective
 
         current_objective = _objective(model)
