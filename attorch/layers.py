@@ -673,7 +673,11 @@ class SpatialTransformerPooled3d(nn.Module):
         r = self.__class__.__name__ + \
             ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
-            r += ' with bias\n'
+            r += ' with bias'
+        if self.stop_grad:
+            r += ', stop_grad=True'
+        r += '\n'
+
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
