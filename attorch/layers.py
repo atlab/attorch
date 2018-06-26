@@ -589,7 +589,7 @@ class SpatialTransformerPooled3d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
                  init_range=.05, kernel_size=2, stride=2, grid=None, stop_grad=False):
         super().__init__()
-        self.pool_steps = pool_steps
+        self._pool_steps = pool_steps
         self.in_shape = in_shape
         c, t, w, h = in_shape
         self.outdims = outdims
@@ -598,7 +598,7 @@ class SpatialTransformerPooled3d(nn.Module):
             self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         else:
             self.grid = grid
-        self.features = Parameter(torch.Tensor(1, c * (self.pool_steps + 1), 1, outdims))
+        self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
@@ -611,13 +611,30 @@ class SpatialTransformerPooled3d(nn.Module):
         self.initialize()
         self.stop_grad = stop_grad
 
+    @property
+    def pool_steps(self):
+        return self._pool_steps
+
+    @pool_steps.setter
+    def pool_steps(self, value):
+        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-negative integer'
+        if value != self._pool_steps:
+            print('Resizing readout features')
+            c, t, w, h = self.in_shape
+            outdims = self.outdims
+            self._pool_steps = int(value)
+            self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
+            self.features.data.fill_(1 / self.in_shape[0])
+
     def initialize(self, init_noise=1e-3):
         # randomly pick centers within the spatial map
-        self.grid.data.uniform_(-self.init_range, self.init_range)
-        self.features.data.fill_(1 / self.in_shape[0])
 
+        self.features.data.fill_(1 / self.in_shape[0])
         if self.bias is not None:
             self.bias.data.fill_(0)
+
+        self.grid.data.uniform_(-self.init_range, self.init_range)
+
 
     def feature_l1(self, average=True, subs_idx=None):
         subs_idx = subs_idx if subs_idx is not None else slice(None)
@@ -635,7 +652,7 @@ class SpatialTransformerPooled3d(nn.Module):
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
 
         N, c, t, w, h = x.size()
-        m = self.pool_steps + 1
+        m = self._pool_steps + 1
         if subs_idx is not None:
             feat = self.features[..., subs_idx].contiguous()
             outdims = feat.size(-1)
@@ -654,7 +671,7 @@ class SpatialTransformerPooled3d(nn.Module):
             grid = grid.contiguous().view(-1, outdims, 1, 2)
         z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
         pools = [F.grid_sample(z, grid)]
-        for i in range(self.pool_steps):
+        for i in range(self._pool_steps):
             z = self.avg(z)
             pools.append(F.grid_sample(z, grid))
         y = torch.cat(pools, dim=1)
