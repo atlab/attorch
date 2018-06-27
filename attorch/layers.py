@@ -626,14 +626,14 @@ class SpatialTransformerPooled3d(nn.Module):
             self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
             self.features.data.fill_(1 / self.in_shape[0])
 
-    def initialize(self, init_noise=1e-3):
+    def initialize(self, init_noise=1e-3, grid=True):
         # randomly pick centers within the spatial map
 
         self.features.data.fill_(1 / self.in_shape[0])
         if self.bias is not None:
             self.bias.data.fill_(0)
-
-        self.grid.data.uniform_(-self.init_range, self.init_range)
+        if grid:
+            self.grid.data.uniform_(-self.init_range, self.init_range)
 
 
     def feature_l1(self, average=True, subs_idx=None):
