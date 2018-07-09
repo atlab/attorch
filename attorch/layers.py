@@ -599,6 +599,7 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             self.grid = grid
         self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
+        self.register_buffer('mask', 0 * self.features.data + 1)
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
@@ -624,6 +625,7 @@ class SpatialTransformerPooled3d(nn.Module):
             outdims = self.outdims
             self._pool_steps = int(value)
             self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
+            self.mask =  0 * self.features.data + 1
             self.features.data.fill_(1 / self.in_shape[0])
 
     def initialize(self, init_noise=1e-3, grid=True):
@@ -643,9 +645,17 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             return self.features[..., subs_idx].abs().sum()
 
+    def fisher_prune_scores(self):
+        if self.features.grad is None:
+            raise ValueError('You need to run backward first')
+        return (0.5 * self.features.grad.pow(2) * self.features.pow(2)).detach()
+
+
     def forward(self, x, shift=None, subs_idx=None):
         if self.stop_grad:
             x = x.detach()
+
+        self.features.data *= self.mask
 
         if self.positive:
             positive(self.features)
