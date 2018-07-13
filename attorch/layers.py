@@ -653,11 +653,18 @@ class SpatialTransformerPooled3d(nn.Module):
         self._prune_n += 1
         if self.features.grad is None:
             raise ValueError('You need to run backward first')
-        self._prune_scores += (0.5 * self.features.grad.pow(2) * self.features.pow(2)).detach()
+        self._prune_scores +=  (0.5 * self.features.grad.pow(2) * self.features.pow(2)).detach()
 
     @property
     def fisher_prune_scores(self):
         return self._prune_scores / self._prune_n
+
+    def prune(self):
+        idx = (self.fisher_prune_scores + 1e6 * (1 - self.mask)).squeeze().argmin(dim=0)
+        nt = idx.new
+        seq = nt(np.arange(len(idx)))
+        self.mask[:, idx, :, seq] = 0
+        self.features.data[:, idx, :, seq] = 0
 
     def forward(self, x, shift=None, subs_idx=None):
         if self.stop_grad:
