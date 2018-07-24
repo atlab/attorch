@@ -1,4 +1,6 @@
 from collections import OrderedDict
+import numpy as np
+import time
 
 
 def copy_state(model):
@@ -19,10 +21,10 @@ def copy_state(model):
 
 
 def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=1000, maximize=True, tolerance=1e-5,
-                   switch_mode=True, restore_best=True):
+                   switch_mode=True, restore_best=True, time_obj_tracker=None):
     """
     Early stopping iterator. When it stops, it restores the best previous state of the model.  
-    
+
     Args:
         model:     model that is being optimized 
         objective: objective function that is used for early stopping. Must be of the form objective(model)
@@ -36,6 +38,8 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
                      the model is switched to eval mode before objective evaluation and restored to its previous mode
                      after the evaluation.
         restore_best: whether to restore the best scoring model state at the end of early stopping
+        time_obj_tracker: np.array of shape [Epoch, 2] that tracks training time in seconds 
+                        (time_obj_tracker[:,0]) and stopping objective (time_obj_tracker[:,1])
 
     """
     training_status = model.training
@@ -56,7 +60,12 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
     while patience_counter < patience and epoch < max_iter:
         for _ in range(interval):
             epoch += 1
-            yield epoch, current_objective
+            if time_obj_tracker is None:
+                yield epoch, current_objective
+            else:
+                new_track_point = np.array([[time.time(), current_objective]])
+                new_tracker = np.concatenate((time_obj_tracker, new_track_point), axis=0)
+                yield epoch, current_objective, new_tracker
 
         current_objective = _objective(model)
 
@@ -73,8 +82,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
     old_objective = _objective(model)
     if restore_best:
         model.load_state_dict(best_state_dict)
-        print('Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, _objective(model)))
+        print(
+            'Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, _objective(model)))
     else:
         print('Final best model! objective {:.6f}'.format(_objective(model)))
-
-
