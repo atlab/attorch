@@ -64,8 +64,9 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
                 yield epoch, current_objective
             else:
                 new_track_point = np.array([[time.time(), current_objective]])
-                new_tracker = np.concatenate((time_obj_tracker, new_track_point), axis=0)
-                yield epoch, current_objective, new_tracker
+                time_obj_tracker = np.concatenate(
+                    (time_obj_tracker, new_track_point), axis=0)
+                yield epoch, current_objective, time_obj_tracker
 
         current_objective = _objective(model)
 
