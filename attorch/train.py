@@ -20,8 +20,9 @@ def copy_state(model):
     return copy_dict
 
 
-def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=1000, maximize=True, tolerance=1e-5,
-                   switch_mode=True, restore_best=True, time_obj_tracker=None):
+def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=1000,
+                   maximize=True, tolerance=1e-5, switch_mode=True, restore_best=True,
+                   time_obj_tracker=None):
     """
     Early stopping iterator. When it stops, it restores the best previous state of the model.  
 
@@ -66,7 +67,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
                 new_track_point = np.array([[time.time(), current_objective]])
                 time_obj_tracker = np.concatenate(
                     (time_obj_tracker, new_track_point), axis=0)
-                yield epoch, current_objective, time_obj_tracker
+                yield epoch, time_obj_tracker
 
         current_objective = _objective(model)
 
