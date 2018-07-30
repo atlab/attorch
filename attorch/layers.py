@@ -376,7 +376,7 @@ class SpatialTransformerPooled2d(nn.Module):
     
     @pool_steps.setter
     def pool_steps(self, value):
-        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-ngative integer'
+        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-negative integer'
         if value != self._pool_steps:
             print('Resizing readout features')
             c, w, h = self.in_shape

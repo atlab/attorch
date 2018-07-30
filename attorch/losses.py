@@ -1,6 +1,5 @@
 import torch.nn as nn
 from torch.nn import functional as F
-from torch.nn.modules.loss import BCELoss
 import torch
 import numpy as np
 

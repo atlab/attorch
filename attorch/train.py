@@ -20,6 +20,19 @@ def copy_state(model):
     return copy_dict
 
 
+class TimeObjectiveTracker():
+    def __init__(self):
+        self.tracker = np.array([[time.time(), 0.0]])
+
+    def log_objective(self, obj):
+        new_track_point = np.array([[time.time(), obj]])
+        self.tracker = np.concatenate(
+            (self.tracker, new_track_point), axis=0)
+
+    def finalize(self):
+        self.tracker[:, 0] -= self.tracker[0, 0]
+
+
 def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=1000,
                    maximize=True, tolerance=1e-5, switch_mode=True, restore_best=True,
                    time_obj_tracker=None):
@@ -39,8 +52,8 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
                      the model is switched to eval mode before objective evaluation and restored to its previous mode
                      after the evaluation.
         restore_best: whether to restore the best scoring model state at the end of early stopping
-        time_obj_tracker: np.array of shape [Epoch, 2] that tracks training time in seconds 
-                        (time_obj_tracker[:,0]) and stopping objective (time_obj_tracker[:,1])
+        time_obj_tracker (TimeObjectiveTracker): 
+            for tracking training time & stopping objective
 
     """
     training_status = model.training
@@ -61,13 +74,9 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
     while patience_counter < patience and epoch < max_iter:
         for _ in range(interval):
             epoch += 1
-            if time_obj_tracker is None:
-                yield epoch, current_objective
-            else:
-                new_track_point = np.array([[time.time(), current_objective]])
-                time_obj_tracker = np.concatenate(
-                    (time_obj_tracker, new_track_point), axis=0)
-                yield epoch, time_obj_tracker
+            if time_obj_tracker is not None:
+                time_obj_tracker.log_objective(current_objective)
+            yield epoch, current_objective
 
         current_objective = _objective(model)
 
