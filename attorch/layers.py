@@ -351,13 +351,13 @@ class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
                  pool_kern=2, init_range=.1):
         super().__init__()
-        self.pool_steps = pool_steps
+        self._pool_steps = pool_steps
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
-        self.features = Parameter(torch.Tensor(1, c * (self.pool_steps + 1), 1, outdims))
+        self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
@@ -369,7 +369,21 @@ class SpatialTransformerPooled2d(nn.Module):
         self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern, count_include_pad=False)
         self.init_range = init_range
         self.initialize()
-
+    
+    @property
+    def pool_steps(self):
+        return self._pool_steps
+    
+    @pool_steps.setter
+    def pool_steps(self, value):
+        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-negative integer'
+        if value != self._pool_steps:
+            print('Resizing readout features')
+            c, w, h = self.in_shape
+            self._pool_steps = int(value)
+            self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, self.outdims))
+            self.features.data.fill_(1 / self.in_shape[0])
+            
     def initialize(self):
         self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
