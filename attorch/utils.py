@@ -31,6 +31,7 @@ def cycle_datasets(loaders):
             cycle(loaders.keys()), alternate(*loaders.values())):
         yield readout_key, outputs
 
+
 def n_batches(n, loaders):
     """
     Cycles through datasets of dataloaders until n batches are reached
@@ -40,8 +41,10 @@ def n_batches(n, loaders):
     Yields:
         readout key, dataset item
     """
+    i = 0
     while True:
-        for i, d in enumerate(cycle_datasets(loaders)):
+        for d in cycle_datasets(loaders):
             if i == n:
                 return
             yield d
+            i += 1
