@@ -60,7 +60,7 @@ class ActiveSGD(optim.SGD):
 
 
 def cosine_lr_sched(lr_min, lr_max, period_init, period_mult, n=1000):
-    """ Generator that produces consine learning rate schedule,
+    """ Generator that produces cosine learning rate schedule,
         as defined in Loshchilov & Hutter, 2017, https://arxiv.org/abs/1608.03983
     Arguments:
         lr_min (int): minimum learning rate
