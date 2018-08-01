@@ -30,7 +30,7 @@ class ActiveSGD(optim.SGD):
         dampening = self.param_groups[0]['dampening']
         nesterov = self.param_groups[0]['nesterov']
 
-        params = list(active_params) if active_params is not None \
+        params = active_params if active_params is not None \
             else self.param_groups[0]['params']
 
         for p in params:
