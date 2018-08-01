@@ -63,8 +63,8 @@ def cosine_lr_sched(lr_min, lr_max, period_init, period_mult, n=1000):
     """ Generator that produces cosine learning rate schedule,
         as defined in Loshchilov & Hutter, 2017, https://arxiv.org/abs/1608.03983
     Arguments:
-        lr_min (int): minimum learning rate
-        lr_max (int): maximum learning rate
+        lr_min (float): minimum learning rate
+        lr_max (float): maximum learning rate
         period_init (int): intial learning rate restart period
         period_mult (int): period multiplier that is applied at each restart
         n (int): number of iterations
