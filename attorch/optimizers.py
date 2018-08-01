@@ -58,6 +58,7 @@ class ActiveSGD(optim.SGD):
 
         return loss
 
+
 def cosine_lr_sched(lr_min, lr_max, period_init, period_mult, n=1000):
     """ Generator that produces consine learning rate schedule,
         as defined in Loshchilov & Hutter, 2017, https://arxiv.org/abs/1608.03983
@@ -74,10 +75,11 @@ def cosine_lr_sched(lr_min, lr_max, period_init, period_mult, n=1000):
     epoch = 0
     period = period_init
     while i < n:
-        lr = lr_min + (lr_max - lr_min) * (1 + math.cos(math.pi * epoch / period)) / 2
+        lr = lr_min + (lr_max - lr_min) * \
+            (1 + math.cos(math.pi * epoch / period)) / 2
         yield lr
+        i += 1
         epoch += 1
-        i+=1
-        if epoch % period == 0: 
+        if epoch % period == 0:
             period *= period_mult
             epoch = 0
