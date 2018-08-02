@@ -59,7 +59,7 @@ class ActiveSGD(optim.SGD):
         return loss
 
 
-def cosine_lr_sched(lr_min, lr_max, period_init, period_mult, n=1000):
+def cosine_lr_sched(lr_min, lr_max, period_init=10, period_mult=2, n=1000):
     """ Generator that produces cosine learning rate schedule,
         as defined in Loshchilov & Hutter, 2017, https://arxiv.org/abs/1608.03983
     Arguments:
