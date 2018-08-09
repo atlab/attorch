@@ -633,7 +633,6 @@ class SpatialTransformerPooled3d(nn.Module):
         if grid:
             self.grid.data.uniform_(-self.init_range, self.init_range)
 
-
     def feature_l1(self, average=True, subs_idx=None):
         subs_idx = subs_idx if subs_idx is not None else slice(None)
         if average:
@@ -649,7 +648,7 @@ class SpatialTransformerPooled3d(nn.Module):
         self._prune_n += 1
         if self.features.grad is None:
             raise ValueError('You need to run backward first')
-        self._prune_scores +=  (0.5 * self.features.grad.pow(2) * self.features.pow(2)).detach()
+        self._prune_scores += (0.5 * self.features.grad.pow(2) * self.features.pow(2)).detach()
 
     @property
     def fisher_prune_scores(self):
@@ -720,6 +719,7 @@ class SpatialTransformerPooled3d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
+
 class SpatialTransformerXPooled3d(nn.Module):
 
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
@@ -773,7 +773,6 @@ class SpatialTransformerXPooled3d(nn.Module):
         if grid:
             self.grid.data.uniform_(-self.init_range, self.init_range)
 
-
     def feature_l1(self, average=True, subs_idx=None):
         subs_idx = subs_idx if subs_idx is not None else slice(None)
         if average:
@@ -787,7 +786,6 @@ class SpatialTransformerXPooled3d(nn.Module):
             return (self.grid[:, subs_idx, :-1, :] - self.grid[:, subs_idx, 1:, :]).pow(2).mean()
         else:
             return (self.grid[:, subs_idx, :-1, :] - self.grid[:, subs_idx, 1:, :]).pow(2).sum()
-
 
     def forward(self, x, shift=None, subs_idx=None):
         if self.stop_grad:
@@ -869,6 +867,16 @@ class ExtendedConv2d(nn.Conv2d):
 
         super().__init__(in_channels, out_channels, kernel_size, stride=stride,
                          padding=padding, groups=groups, bias=bias)
+
+
+class DepthSeparableConv2d(nn.Sequential):
+
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=True):
+        super().__init__()
+        self.add_module('in_depth_conv', nn.Conv2d(in_channels, out_channels, 1, bias=bias))
+        self.add_module('spatial_conv', nn.Conv2d(out_channels, out_channels, kernel_size, stride=1, padding=padding,
+                                      dilation=dilation, bias=bias, groups=out_channels))
+        self.add_module('out_depth_conv', nn.Conv2d(out_channels, out_channels, 1, bias=bias))
 
 
 class ConstrainedConv2d(ExtendedConv2d):
