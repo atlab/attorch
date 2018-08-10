@@ -720,6 +720,43 @@ class SpatialTransformerPooled3d(nn.Module):
         return r
 
 
+class FactorizedSpatialTransformerPooled3d(SpatialTransformerPooled3d):
+
+    def __init__(self, *args, components=25, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.components = components
+        c, t, w, h = self.in_shape
+        outdims = self.outdims
+
+        self.feature_scales = Parameter(torch.Tensor(1, 1, 1, outdims, components))
+        self.feature_channels = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, 1, components))
+        self.init_features()
+
+    def init_features(self):
+        self.feature_channels.data.fill_(1 / self.in_shape[0])
+        self.feature_scales.data.fill_(1 / self.in_shape[0])
+
+    @property
+    def features(self):
+        return (self.feature_scales * self.feature_channels).sum(-1)
+
+    @property
+    def pool_steps(self):
+        return self._pool_steps
+
+    @pool_steps.setter
+    def pool_steps(self, value):
+        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-negative integer'
+        if value != self._pool_steps:
+            print('Resizing readout features')
+            c, t, w, h = self.in_shape
+            outdims = self.outdims
+            self._pool_steps = int(value)
+            self.feature_channels = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims, self.components))
+            self.mask = self.features.data.new(*self.features.size()).fill_(1.)
+            self.init_features()
+
+
 class SpatialTransformerXPooled3d(nn.Module):
 
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
@@ -875,7 +912,7 @@ class DepthSeparableConv2d(nn.Sequential):
         super().__init__()
         self.add_module('in_depth_conv', nn.Conv2d(in_channels, out_channels, 1, bias=bias))
         self.add_module('spatial_conv', nn.Conv2d(out_channels, out_channels, kernel_size, stride=1, padding=padding,
-                                      dilation=dilation, bias=bias, groups=out_channels))
+                                                  dilation=dilation, bias=bias, groups=out_channels))
         self.add_module('out_depth_conv', nn.Conv2d(out_channels, out_channels, 1, bias=bias))
 
 
