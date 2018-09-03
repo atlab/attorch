@@ -87,7 +87,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
             epoch += 1
             if time_obj_tracker is not None:
                 time_obj_tracker.log_objective(current_objective)
-            if not np.isfinite(current_objective):
+            if (~np.isfinite(current_objective)).any():
                 print('Objective is not Finite. Stopping training')
                 finalize(model, best_state_dict)
             yield epoch, current_objective
