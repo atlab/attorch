@@ -90,6 +90,7 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
             if (~np.isfinite(current_objective)).any():
                 print('Objective is not Finite. Stopping training')
                 finalize(model, best_state_dict)
+                return
             yield epoch, current_objective
 
         current_objective = _objective(model)
