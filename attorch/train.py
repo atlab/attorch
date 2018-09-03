@@ -66,6 +66,17 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
             mod.train(training_status)
         return ret
 
+    def finalize(model, best_state_dict):
+        old_objective = _objective(model)
+        if restore_best:
+            model.load_state_dict(best_state_dict)
+            print(
+                'Restoring best model! {:.6f} ---> {:.6f}'.format(
+                    old_objective, _objective(model)))
+        else:
+            print('Final best model! objective {:.6f}'.format(
+                _objective(model)))
+
     epoch = start
     maximize = float(maximize)
     best_objective = current_objective = _objective(model)
@@ -76,6 +87,9 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
             epoch += 1
             if time_obj_tracker is not None:
                 time_obj_tracker.log_objective(current_objective)
+            if not np.isfinite(current_objective):
+                print('Objective is not Finite. Stopping training')
+                finalize(model, best_state_dict)
             yield epoch, current_objective
 
         current_objective = _objective(model)
@@ -90,10 +104,4 @@ def early_stopping(model, objective, interval=5, patience=20, start=0, max_iter=
             patience_counter += 1
             print('[{:03d}|{:02d}/{:02d}] -/-> {}'.format(epoch, patience_counter, patience, current_objective),
                   flush=True)
-    old_objective = _objective(model)
-    if restore_best:
-        model.load_state_dict(best_state_dict)
-        print(
-            'Restoring best model! {:.6f} ---> {:.6f}'.format(old_objective, _objective(model)))
-    else:
-        print('Final best model! objective {:.6f}'.format(_objective(model)))
+    finalize(model, best_state_dict)
