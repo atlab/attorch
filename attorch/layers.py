@@ -405,7 +405,7 @@ class SpatialTransformerPooled2d(nn.Module):
             ret = ret + (self.features[:, chunk:chunk + group_size, ...].pow(2).mean(1) + 1e-12).sqrt().mean() / n
         return ret
 
-    def forward(self, x, shift=None):
+    def forward(self, x, shift=None, out_idx=None):
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
@@ -413,20 +413,31 @@ class SpatialTransformerPooled2d(nn.Module):
         m = self.pool_steps + 1
         feat = self.features.view(1, m * c, self.outdims)
 
-        if shift is None:
-            grid = self.grid.expand(N, self.outdims, 1, 2)
+        if out_idx is None:
+            grid = self.grid
+            bias = self.bias
+            outdims = self.outdims
         else:
-            grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
+            feat = feat[:, :, out_idx]
+            grid = self.grid[:, out_idx]
+            if self.bias is not None:
+                bias = self.bias[out_idx]
+            outdims = out_idx.size
+
+        if shift is None:
+            grid = grid.expand(N, outdims, 1, 2)
+        else:
+            grid = grid.expand(N, outdims, 1, 2) + shift[:, None, None, :]
 
         pools = [F.grid_sample(x, grid)]
         for _ in range(self.pool_steps):
             x = self.avg(x)
             pools.append(F.grid_sample(x, grid))
         y = torch.cat(pools, dim=1)
-        y = (y.squeeze(-1) * feat).sum(1).view(N, self.outdims)
+        y = (y.squeeze(-1) * feat).sum(1).view(N, outdims)
 
         if self.bias is not None:
-            y = y + self.bias
+            y = y + bias
         return y
 
     def __repr__(self):
