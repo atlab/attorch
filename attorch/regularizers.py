@@ -34,7 +34,7 @@ class Laplace(nn.Module):
         self.register_buffer('filter', torch.from_numpy(laplace()))
 
     def forward(self, x):
-        return F.conv2d(x, self.filter, padding=self.padding, bias=None)
+        return F.conv2d(x, self.filter, padding=self._padding, bias=None)
 
 
 class Laplace3d(nn.Module):
