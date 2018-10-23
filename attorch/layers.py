@@ -422,7 +422,7 @@ class SpatialTransformerPooled2d(nn.Module):
             grid = self.grid[:, out_idx]
             if self.bias is not None:
                 bias = self.bias[out_idx]
-            outdims = out_idx.size
+            outdims = len(out_idx)
 
         if shift is None:
             grid = grid.expand(N, outdims, 1, 2)
