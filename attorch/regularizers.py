@@ -59,8 +59,10 @@ class LaplaceL2(nn.Module):
         super().__init__()
         self.laplace = Laplace(padding=padding)
 
-    def forward(self, x):
+    def forward(self, x, weights=None):
         ic, oc, k1, k2 = x.size()
+        if weights is not None:
+            x = weights * x
         return self.laplace(x.view(ic * oc, 1, k1, k2)).pow(2).mean() / 2
 
 
