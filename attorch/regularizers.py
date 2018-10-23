@@ -61,9 +61,9 @@ class LaplaceL2(nn.Module):
 
     def forward(self, x, weights=None):
         ic, oc, k1, k2 = x.size()
-        if weights is not None:
-            x = weights * x
-        return self.laplace(x.view(ic * oc, 1, k1, k2)).pow(2).mean() / 2
+        if weights is None:
+            weights = 1.0
+        return (self.laplace(x.view(ic * oc, 1, k1, k2)).view(ic, oc, k1, k2).pow(2) * weights).mean() / 2
 
 
 class LaplaceL23d(nn.Module):
