@@ -1,17 +1,18 @@
-import torch
+import numpy as np
 import scipy.signal
+import torch
+from math import ceil
+from torch import nn as nn
+# from .module import Module
+from torch.nn import Parameter
+from torch.nn import functional as F
+from torch.nn.init import xavier_normal
+from torch.nn.modules.utils import _pair
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .constraints import positive
-from torch import nn as nn
-from torch.nn import functional as F
-from torch.nn.modules.utils import _pair
-import numpy as np
-from math import ceil
-# from .module import Module
-from torch.nn import Parameter
-from torch.nn.init import xavier_normal
+from .utils.hermite import hermite_2d, rotate_weights_hermite
 
 
 def elu1(x):
@@ -1116,3 +1117,58 @@ class Pyramid(nn.Module):
     def __repr__(self):
         return "Pyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample}, type={type})".format(
             **self.__dict__)
+
+
+class RotEquiConv2d(nn.Module):
+
+    def __init__(self, in_features, out_features, num_rotations, kernel_size,
+                 padding=0, bias=True, momentum=0.1, upsampling=2, first_layer=False):
+        super().__init__()
+
+        if not first_layer:
+            in_features *= num_rotations
+
+        self._batch_norm = nn.BatchNorm3d(out_features, momentum=momentum, affine=False)
+
+        H, self.desc, self.mu = hermite_2d(kernel_size, kernel_size * upsampling, 2 * np.sqrt(kernel_size))
+        self.register_buffer('hermite_basis', torch.FloatTensor(H))
+
+        n_coeffs = kernel_size * (kernel_size + 1) // 2
+        self.coeffs = Parameter(torch.FloatTensor(size=(n_coeffs, in_features, out_features)).normal_(std=0.1))
+
+        self.bias = Parameter(torch.FloatTensor(size=(1, out_features, 1, 1, 1)).zero_()) if bias else None
+
+        self.num_rotations = num_rotations
+        self.out_features = out_features
+        self.first_layer = first_layer
+        self.padding = padding
+
+
+    @property
+    def raw_weights(self):
+        return torch.einsum('ijk,ilm->mljk', (self.hermite_basis, self.coeffs))
+
+    @property
+    def pooled_raw_weights(self):
+        return F.avg_pool2d(self.raw_weights, stride=2, kernel_size=2)
+
+    @property
+    def weights(self):
+        return rotate_weights_hermite(self.hermite_basis, self.desc, self.mu, self.coeffs, self.num_rotations,
+                                        first_layer=self.first_layer)
+
+
+    @property
+    def pooled_weights(self):
+        return F.avg_pool2d(self.weights, stride=2, kernel_size=2)
+
+    def forward(self, input):
+        x = F.conv2d(input, self.pooled_weights, padding=self.padding)
+        N, c, *spatial = x.shape
+        x = x.view(N, self.out_features, self.num_rotations, *spatial)
+        x = self._batch_norm(x)
+        if self.bias is not None:
+            x = x + self.bias
+        return x.view(N, c, *spatial)
+
+
