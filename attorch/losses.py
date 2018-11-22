@@ -1,8 +1,10 @@
 import torch.nn as nn
 from torch.nn import functional as F
-from torch.nn.modules.loss import _assert_no_grad, BCELoss
 import torch
 import numpy as np
+
+def _assert_no_grad(tensor):
+    assert not tensor.requires_grad
 
 
 class PoissonLoss(nn.Module):
