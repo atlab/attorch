@@ -1197,3 +1197,83 @@ class RotEquiConv2d(nn.Module):
         return x.view(N, c, *spatial)
 
 
+
+class MaxMin(nn.Module):
+    def __init__(self, axis=-1):
+        super(MaxMinGroup, self).__init__()
+        self.axis = axis
+
+    def forward(self, x):
+        maxes = maxout_by_group(x, 2, self.axis)
+        mins = minout_by_group(x, 2, self.axis)
+        maxmin = torch.cat((maxes, mins), dim=1)
+        return maxmin
+
+    def extra_repr(self):
+        return 'group_size: {}'.format(2)
+
+class GroupSort(nn.Module):
+
+    def __init__(self, group_size, axis=-1):
+        super(GroupSort, self).__init__()
+        self.group_size = group_size
+        self.axis = axis
+
+    def forward(self, x):
+        group_sorted = group_sort(x, self.group_size, self.axis)
+        # assert check_group_sorted(group_sorted, self.group_size, axis=self.axis) == 1, "GroupSort failed. "
+
+        return group_sorted
+
+    def extra_repr(self):
+        return 'num_groups: {}'.format(self.num_units)
+
+
+def process_group_size(x, group_size, axis=-1):
+    size = list(x.size())
+    num_channels = size[axis]
+
+    if num_channels % group_size:
+        raise ValueError('number of features({}) is not a '
+                         'multiple of group_size({})'.format(num_channels, num_units))
+    size[axis] = -1
+    if axis == -1:
+        size += [group_size]
+    else:
+        size.insert(axis+1, group_size)
+    return size
+
+
+def group_sort(x, group_size, axis=-1):
+    size = process_group_size(x, group_size, axis)
+    grouped_x = x.view(*size)
+    sort_dim = axis if axis == -1 else axis + 1
+    sorted_grouped_x, _ = grouped_x.sort(dim=sort_dim)
+    sorted_x = sorted_grouped_x.view(*list(x.shape))
+
+    return sorted_x
+
+def maxout_by_group(x, group_size, axis=-1):
+    size = process_group_size(x, group_size, axis)
+    sort_dim = axis if axis == -1 else axis + 1
+    return torch.max(x.view(*size), sort_dim)[0]
+
+
+def minout_by_group(x, group_size, axis=-1):
+    size = process_group_size(x, group_size, axis)
+    sort_dim = axis if axis == -1 else axis + 1
+    return torch.min(x.view(*size), sort_dim)[0]
+
+
+def check_group_sorted(x, group_size, axis=-1):
+    size = process_group_size(x, group_size, axis)
+
+    x_np = x.cpu().data.numpy()
+    x_np = x_np.reshape(*size)
+    x_np_diff = np.diff(x_np, axis=axis)
+
+    # Return 1 iff all elements are increasing.
+    if np.sum(x_np_diff < 0) > 0:
+        return 0
+    else:
+        return 1
