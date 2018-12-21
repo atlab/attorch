@@ -621,7 +621,7 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             self.grid = grid
         self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
-        self.register_buffer('mask', self.features.data.new(*self.features.size()).fill_(1.))
+        self.register_buffer('mask', torch.ones_like(self.features))
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
@@ -647,7 +647,7 @@ class SpatialTransformerPooled3d(nn.Module):
             outdims = self.outdims
             self._pool_steps = int(value)
             self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
-            self.mask = self.features.data.new(*self.features.size()).fill_(1.)
+            self.mask = torch.ones_like(self.features)
             self.features.data.fill_(1 / self.in_shape[0])
 
     def initialize(self, init_noise=1e-3, grid=True):
@@ -779,7 +779,7 @@ class FactorizedSpatialTransformerPooled3d(SpatialTransformerPooled3d):
             outdims = self.outdims
             self._pool_steps = int(value)
             self.feature_channels = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims, self.components))
-            self.mask = self.features.data.new(*self.features.size()).fill_(1.)
+            self.mask = torch.ones_like(self.features)
             self.init_features()
 
 
