@@ -1,13 +1,15 @@
-from collections import defaultdict, namedtuple, Mapping
-
 import h5py
-import torch
-from torch.utils.data import Dataset
 import numpy as np
+import torch
+from collections import defaultdict, namedtuple, Mapping
+from glob import glob
+from torch.utils.data import Dataset
+import os
 
 class Invertible:
     def inv(self, y):
         raise NotImplemented('Subclasses of Invertible must implement an inv method')
+
 
 class DataTransform:
     def initialize(self, dataset):
@@ -44,6 +46,7 @@ class Neurons2Behavior(DataTransform):
 
     def __call__(self, item):
         return tuple((item[0], np.hstack((item[1], item[3][~self.idx])), item[2], item[3][self.idx]))
+
 
 class ToTensor(DataTransform):
     def __call__(self, item):
@@ -87,7 +90,67 @@ class H5Dataset(Dataset):
                           for key in self.data_keys] + ['Transforms: ' + repr(self.transform)])
 
 
-class H5SequenceSet(Dataset):
+class TransformDataset(Dataset):
+
+    def transform(self, x, exclude=None):
+        for tr in self.transforms:
+            if exclude is None or not isinstance(tr, exclude):
+                x = tr(x)
+        return x
+
+    def invert(self, x, exclude=None):
+        for tr in reversed(filter(lambda tr: not isinstance(tr, exclude), self.transforms)):
+            if not isinstance(tr, Invertible):
+                raise TypeError('Cannot invert', tr.__class__.__name__)
+            else:
+                x = tr.inv(x)
+        return x
+
+    def __iter__(self):
+        yield from map(self.__getitem__, range(len(self)))
+
+    def __len__(self):
+        return self._len
+
+    def __repr__(self):
+        return '{} m={}:\n\t({})'.format(self.__class__.__name__, len(self), ', '.join(self.data_groups)) \
+               + '\n\t[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) + ']'
+
+
+class NumpyZSet(TransformDataset):
+    def __init__(self, cachedir, *data_groups, transforms=None):
+        self.cachedir = cachedir
+        tmp = np.load(os.path.join(cachedir, '0.npz'))
+        for key in data_groups:
+            assert key in tmp, 'Could not find {} in file'.format(key)
+        self._len = len(glob('{}/[0-9]*.npz'.format(self.cachedir)))
+
+        self.data_groups = data_groups
+
+        self.transforms = transforms or []
+
+        self.data_point = namedtuple('DataPoint', data_groups)
+
+    def __getitem__(self, item):
+        dat = np.load(os.path.join(self.cachedir, '{}.npz'.format(item)))
+        x = self.data_point(*(dat[g] for g in self.data_groups))
+        for tr in self.transforms:
+            x = tr(x)
+        return x
+
+    def __getattr__(self, item):
+        dat = np.load(os.path.join(self.cachedir, 'meta.npz'))
+        if item in dat:
+            item = dat[item]
+            if item.dtype.char == 'S':  # convert bytes to univcode
+                item = item.astype(str)
+            return item
+        else:
+            raise AttributeError('Item {} not found in {}'.format(item, self.__class__.__name__))
+
+
+
+class H5SequenceSet(TransformDataset):
     def __init__(self, filename, *data_groups, transforms=None):
         self._fid = h5py.File(filename, 'r')
 
@@ -106,35 +169,11 @@ class H5SequenceSet(Dataset):
 
         self.data_point = namedtuple('DataPoint', data_groups)
 
-    def transform(self, x, exclude=None):
-        for tr in self.transforms:
-            if exclude is None or not isinstance(tr, exclude):
-                x = tr(x)
-        return x
-
-    def invert(self, x, exclude=None):
-        for tr in reversed(filter(lambda tr: not isinstance(tr, exclude), self.transforms)):
-            if not isinstance(tr, Invertible):
-                raise TypeError('Cannot invert', tr.__class__.__name__)
-            else:
-                x = tr.inv(x)
-        return x
-
     def __getitem__(self, item):
         x = self.data_point(*(np.array(self._fid[g][str(item)]) for g in self.data_groups))
         for tr in self.transforms:
             x = tr(x)
         return x
-
-    def __iter__(self):
-        yield from map(self.__getitem__, range(len(self)))
-
-    def __len__(self):
-        return self._len
-
-    def __repr__(self):
-        return 'H5SequenceSet m={}:\n\t({})'.format(len(self), ', '.join(self.data_groups)) \
-             + '\n\t[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) +']'
 
     def __getattr__(self, item):
         if item in self._fid:
@@ -147,4 +186,3 @@ class H5SequenceSet(Dataset):
             return item
         else:
             raise AttributeError('Item {} not found in {}'.format(item, self.__class__.__name__))
-
