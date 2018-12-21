@@ -1,18 +1,18 @@
-import torch
+import numpy as np
 import scipy.signal
+import torch
+from math import ceil
+from torch import nn as nn
+# from .module import Module
+from torch.nn import Parameter
+from torch.nn import functional as F
+from torch.nn.init import xavier_normal
+from torch.nn.modules.utils import _pair
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from .constraints import positive
-from torch import nn as nn
-from torch.nn import functional as F
-from torch.nn.modules.utils import _pair
-from torch.autograd import Variable
-import numpy as np
-from math import ceil
-# from .module import Module
-from torch.nn import Parameter
-from torch.nn.init import xavier_normal
+from .utils.hermite import hermite_2d, rotate_weights_hermite
 
 
 def elu1(x):
@@ -49,90 +49,6 @@ class AdjustedElu(nn.Module):
 
     def forward(self, x):
         return F.elu(x - 1.) + 1.
-
-
-# TODO if that's not needed, we should replace it by a padding and a convlayer in the future
-class Conv2dPad(nn.Conv2d):
-    """
-    Padded Conv2d layer. Pads with reflect by default.
-    """
-
-    def __init__(self, in_channels, out_channels, kernel_size, pad=None, mode='reflect', **kwargs):
-        assert 'padding' not in kwargs, 'You need to use `pad` not `padding`'
-        self.padding = _pair(0)
-        super().__init__(in_channels, out_channels, kernel_size, padding=0, **kwargs)
-        self.mode = mode
-
-        if isinstance(pad, tuple) or pad is None:
-            self.pad = pad
-        else:
-            self.pad = 4 * (pad,)
-
-    def _pad(self, input):
-        if self.pad is not None and self.pad != 4 * (0,):
-            input = F.pad(input, mode=self.mode, pad=self.pad)
-        return input
-
-    def forward(self, input):
-        input = self._pad(input)
-        return F.conv2d(input, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-
-
-class FullLinear(nn.Module):
-    """
-    Fully connected linear readout from image-like input with c x w x h into a vector output
-    """
-
-    def __init__(self, in_shape, outdims, bias=True):
-        super().__init__()
-        self.in_shape = in_shape
-        self.outdims = outdims
-
-        c, w, h = in_shape
-
-        self.raw_weight = Parameter(torch.Tensor(self.outdims, c, w, h))
-
-        if bias:
-            self.bias = Parameter(torch.Tensor(self.outdims))
-        else:
-            self.register_parameter('bias', None)
-
-        self.initialize()
-
-    def initialize(self, init_noise=1e-3):
-        self.raw_weight.data.normal_(0, init_noise)
-        if self.bias is not None:
-            self.bias.data.fill_(0)
-
-    @property
-    def weight(self):
-        return self.raw_weight.view(self.outdims, -1)
-
-    def l1(self, average=True):
-        if average:
-            return self.weight.abs().mean()
-        else:
-            return self.weight.abs().sum()
-
-    def l2(self, average=True):
-        if average:
-            return self.weight.pow(2).mean()
-        else:
-            return self.weight.pow(2).sum()
-
-    def forward(self, x):
-        N = x.size(0)
-        y = x.view(N, -1) @ self.weight.t()
-        if self.bias is not None:
-            y = y + self.bias.expand_as(y)
-        return y
-
-    def __repr__(self):
-        r = self.__class__.__name__ + \
-            ' (' + '{} x {} x {}'.format(*self.in_shape) + ' -> ' + str(self.outdims) + ')'
-        if self.bias is not None:
-            r += ' with bias'
-        return r
 
 
 class WidthXHeightXFeatureLinear(nn.Module):
@@ -302,13 +218,13 @@ class SpatialXFeatureLinear(nn.Module):
 
 class SpatialTransformerPyramid2d(nn.Module):
     def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
-                 init_range=.1, downsample=True, _skip_upsampling=False, type=None):
+                 init_range=.1, downsample=True, type=None):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling, type=type)
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
@@ -385,6 +301,7 @@ class SpatialTransformerPyramid2d(nn.Module):
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
+
 class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
     def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
                  init_range=.1, downsample=True, type=None):
@@ -431,18 +348,17 @@ class FactorizedSpatialTransformerPyramid2d(SpatialTransformerPyramid2d):
             self.bias.data.fill_(0)
 
 
-
 class SpatialTransformerPooled2d(nn.Module):
     def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
                  pool_kern=2, init_range=.1):
         super().__init__()
-        self.pool_steps = pool_steps
+        self._pool_steps = pool_steps
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
-        self.features = Parameter(torch.Tensor(1, c * (self.pool_steps + 1), 1, outdims))
+        self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
@@ -454,7 +370,21 @@ class SpatialTransformerPooled2d(nn.Module):
         self.avg = nn.AvgPool2d((pool_kern, pool_kern), stride=pool_kern, count_include_pad=False)
         self.init_range = init_range
         self.initialize()
-
+    
+    @property
+    def pool_steps(self):
+        return self._pool_steps
+    
+    @pool_steps.setter
+    def pool_steps(self, value):
+        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-negative integer'
+        if value != self._pool_steps:
+            print('Resizing readout features')
+            c, w, h = self.in_shape
+            self._pool_steps = int(value)
+            self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, self.outdims))
+            self.features.data.fill_(1 / self.in_shape[0])
+            
     def initialize(self):
         self.grid.data.uniform_(-self.init_range, self.init_range)
         self.features.data.fill_(1 / self.in_shape[0])
@@ -476,7 +406,7 @@ class SpatialTransformerPooled2d(nn.Module):
             ret = ret + (self.features[:, chunk:chunk + group_size, ...].pow(2).mean(1) + 1e-12).sqrt().mean() / n
         return ret
 
-    def forward(self, x, shift=None):
+    def forward(self, x, shift=None, out_idx=None):
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
@@ -484,20 +414,31 @@ class SpatialTransformerPooled2d(nn.Module):
         m = self.pool_steps + 1
         feat = self.features.view(1, m * c, self.outdims)
 
-        if shift is None:
-            grid = self.grid.expand(N, self.outdims, 1, 2)
+        if out_idx is None:
+            grid = self.grid
+            bias = self.bias
+            outdims = self.outdims
         else:
-            grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
+            feat = feat[:, :, out_idx]
+            grid = self.grid[:, out_idx]
+            if self.bias is not None:
+                bias = self.bias[out_idx]
+            outdims = len(out_idx)
+
+        if shift is None:
+            grid = grid.expand(N, outdims, 1, 2)
+        else:
+            grid = grid.expand(N, outdims, 1, 2) + shift[:, None, None, :]
 
         pools = [F.grid_sample(x, grid)]
         for _ in range(self.pool_steps):
             x = self.avg(x)
             pools.append(F.grid_sample(x, grid))
         y = torch.cat(pools, dim=1)
-        y = (y.squeeze(-1) * feat).sum(1).view(N, self.outdims)
+        y = (y.squeeze(-1) * feat).sum(1).view(N, outdims)
 
         if self.bias is not None:
-            y = y + self.bias
+            y = y + bias
         return y
 
     def __repr__(self):
@@ -593,13 +534,13 @@ class SpatialXFeatureLinear3d(nn.Module):
 
 class SpatialTransformerPyramid3d(nn.Module):
     def __init__(self, in_shape, outdims, scale_n=4, positive=True, bias=True, init_range=.05, downsample=True,
-                 _skip_upsampling=False, type=None):
+                 type=None):
         super().__init__()
         self.in_shape = in_shape
         c, _, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling, type=type)
+        self.gauss = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
 
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
@@ -666,20 +607,21 @@ class SpatialTransformerPyramid3d(nn.Module):
 
 
 class SpatialTransformerPooled3d(nn.Module):
-    """
-    Factorized readout layer from convolution activations. For each feature layer, the readout weights are
-    Gaussian over spatial dimensions.
-    """
 
-    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True, init_range=.05):
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
+                 init_range=.05, kernel_size=2, stride=2, grid=None, stop_grad=False):
         super().__init__()
-        self.pool_steps = pool_steps
+        self._pool_steps = pool_steps
         self.in_shape = in_shape
         c, t, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
-        self.features = Parameter(torch.Tensor(1, c * (self.pool_steps + 1), 1, outdims))
+        if grid is None:
+            self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
+        else:
+            self.grid = grid
+        self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
+        self.register_buffer('mask', torch.ones_like(self.features))
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
@@ -687,17 +629,35 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             self.register_parameter('bias', None)
 
-        self.avg = nn.AvgPool2d((2, 2), stride=(2, 2), count_include_pad=False)
+        self.avg = nn.AvgPool2d(kernel_size, stride=stride, count_include_pad=False)
         self.init_range = init_range
         self.initialize()
+        self.stop_grad = stop_grad
 
-    def initialize(self, init_noise=1e-3):
+    @property
+    def pool_steps(self):
+        return self._pool_steps
+
+    @pool_steps.setter
+    def pool_steps(self, value):
+        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-negative integer'
+        if value != self._pool_steps:
+            print('Resizing readout features')
+            c, t, w, h = self.in_shape
+            outdims = self.outdims
+            self._pool_steps = int(value)
+            self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
+            self.mask = torch.ones_like(self.features)
+            self.features.data.fill_(1 / self.in_shape[0])
+
+    def initialize(self, init_noise=1e-3, grid=True):
         # randomly pick centers within the spatial map
-        self.grid.data.uniform_(-self.init_range, self.init_range)
-        self.features.data.fill_(1 / self.in_shape[0])
 
+        self.features.data.fill_(1 / self.in_shape[0])
         if self.bias is not None:
             self.bias.data.fill_(0)
+        if grid:
+            self.grid.data.uniform_(-self.init_range, self.init_range)
 
     def feature_l1(self, average=True, subs_idx=None):
         subs_idx = subs_idx if subs_idx is not None else slice(None)
@@ -706,13 +666,39 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             return self.features[..., subs_idx].abs().sum()
 
+    def reset_fisher_prune_scores(self):
+        self._prune_n = 0
+        self._prune_scores = self.features.detach() * 0
+
+    def update_fisher_prune_scores(self):
+        self._prune_n += 1
+        if self.features.grad is None:
+            raise ValueError('You need to run backward first')
+        self._prune_scores += (0.5 * self.features.grad.pow(2) * self.features.pow(2)).detach()
+
+    @property
+    def fisher_prune_scores(self):
+        return self._prune_scores / self._prune_n
+
+    def prune(self):
+        idx = (self.fisher_prune_scores + 1e6 * (1 - self.mask)).squeeze().argmin(dim=0)
+        nt = idx.new
+        seq = nt(np.arange(len(idx)))
+        self.mask[:, idx, :, seq] = 0
+        self.features.data[:, idx, :, seq] = 0
+
     def forward(self, x, shift=None, subs_idx=None):
+        if self.stop_grad:
+            x = x.detach()
+
+        self.features.data *= self.mask
+
         if self.positive:
             positive(self.features)
         self.grid.data = torch.clamp(self.grid.data, -1, 1)
 
         N, c, t, w, h = x.size()
-        m = self.pool_steps + 1
+        m = self._pool_steps + 1
         if subs_idx is not None:
             feat = self.features[..., subs_idx].contiguous()
             outdims = feat.size(-1)
@@ -731,7 +717,7 @@ class SpatialTransformerPooled3d(nn.Module):
             grid = grid.contiguous().view(-1, outdims, 1, 2)
         z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
         pools = [F.grid_sample(z, grid)]
-        for i in range(self.pool_steps):
+        for i in range(self._pool_steps):
             z = self.avg(z)
             pools.append(F.grid_sample(z, grid))
         y = torch.cat(pools, dim=1)
@@ -750,52 +736,174 @@ class SpatialTransformerPooled3d(nn.Module):
         r = self.__class__.__name__ + \
             ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
         if self.bias is not None:
-            r += ' with bias\n'
+            r += ' with bias'
+        if self.stop_grad:
+            r += ', stop_grad=True'
+        r += '\n'
+
         for ch in self.children():
             r += '  -> ' + ch.__repr__() + '\n'
         return r
 
-class BiasBatchNorm2d(nn.Module):
-    def __init__(self, features, **kwargs):
-        kwargs['affine'] = False
+
+class FactorizedSpatialTransformerPooled3d(SpatialTransformerPooled3d):
+
+    def __init__(self, *args, components=25, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.components = components
+        c, t, w, h = self.in_shape
+        outdims = self.outdims
+
+        self.feature_scales = Parameter(torch.Tensor(1, 1, 1, outdims, components))
+        self.feature_channels = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, 1, components))
+        self.init_features()
+
+    def init_features(self):
+        self.feature_channels.data.fill_(1 / self.in_shape[0])
+        self.feature_scales.data.fill_(1 / self.in_shape[0])
+
+    @property
+    def features(self):
+        return (self.feature_scales * self.feature_channels).sum(-1)
+
+    @property
+    def pool_steps(self):
+        return self._pool_steps
+
+    @pool_steps.setter
+    def pool_steps(self, value):
+        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-negative integer'
+        if value != self._pool_steps:
+            print('Resizing readout features')
+            c, t, w, h = self.in_shape
+            outdims = self.outdims
+            self._pool_steps = int(value)
+            self.feature_channels = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims, self.components))
+            self.mask = torch.ones_like(self.features)
+            self.init_features()
+
+
+class SpatialTransformerXPooled3d(nn.Module):
+
+    def __init__(self, in_shape, outdims, pool_steps=1, positive=False, bias=True,
+                 init_range=.2, grid_points=10, kernel_size=4, stride=4, grid=None,
+                 stop_grad=False):
         super().__init__()
-        self.bn = nn.BatchNorm2d(features, **kwargs)
-        self.bias = nn.Parameter(torch.Tensor(1, features, 1, 1))
+        self._pool_steps = pool_steps
+        self.in_shape = in_shape
+        c, t, w, h = in_shape
+        self.outdims = outdims
+        self.positive = positive
+        self._grid_points = grid_points
+        if grid is None:
+            self.grid = Parameter(torch.Tensor(1, outdims, grid_points, 2))
+        else:
+            self.grid = grid
+        self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
+
+        if bias:
+            bias = Parameter(torch.Tensor(outdims))
+            self.register_parameter('bias', bias)
+        else:
+            self.register_parameter('bias', None)
+
+        self.avg = nn.AvgPool2d(kernel_size, stride=stride, count_include_pad=False)
+        self.init_range = init_range
         self.initialize()
+        self.stop_grad = stop_grad
 
-    def initialize(self):
-        self.bn.reset_parameters()
-        self.bias.data.zero_()
+    @property
+    def pool_steps(self):
+        return self._pool_steps
 
-    def forward(self, x):
-        return self.bn(x) + self.bias
+    @pool_steps.setter
+    def pool_steps(self, value):
+        assert value >= 0 and int(value) - value == 0, 'new pool steps must be a non-negative integer'
+        if value != self._pool_steps:
+            print('Resizing readout features')
+            c, t, w, h = self.in_shape
+            outdims = self.outdims
+            self._pool_steps = int(value)
+            self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
+            self.features.data.fill_(1 / self.in_shape[0])
 
-#
-# class BiasBatchNorm2d(nn.BatchNorm2d):
-#     def __init__(self, features, **kwargs):
-#         kwargs['affine'] = False
-#         super().__init__(features, **kwargs)
-#         self.offset = nn.Parameter(torch.Tensor(1, features, 1, 1))
-#         self.initialize()
-#
-#     def initialize(self):
-#         self.reset_parameters()
-#         self.offset.data.zero_()
-#
-#     def forward(self, x):
-#         x = super().forward(x)
-#         return x + self.offset
+    def initialize(self, init_noise=1e-3, grid=True):
+        # randomly pick centers within the spatial map
 
+        self.features.data.fill_(1 / self.in_shape[0])
+        if self.bias is not None:
+            self.bias.data.fill_(0)
+        if grid:
+            self.grid.data.uniform_(-self.init_range, self.init_range)
 
-class BiasBatchNorm3d(nn.BatchNorm3d):
-    def __init__(self, features, **kwargs):
-        kwargs['affine'] = False
-        super().__init__(features, **kwargs)
-        self.bias = nn.Parameter(torch.Tensor(features))
-        self.initialize()
+    def feature_l1(self, average=True, subs_idx=None):
+        subs_idx = subs_idx if subs_idx is not None else slice(None)
+        if average:
+            return self.features[..., subs_idx].abs().mean()
+        else:
+            return self.features[..., subs_idx].abs().sum()
 
-    def initialize(self):
-        self.bias.data.fill_(0.)
+    def dgrid_l2(self, average=True, subs_idx=None):
+        subs_idx = subs_idx if subs_idx is not None else slice(None)
+        if average:
+            return (self.grid[:, subs_idx, :-1, :] - self.grid[:, subs_idx, 1:, :]).pow(2).mean()
+        else:
+            return (self.grid[:, subs_idx, :-1, :] - self.grid[:, subs_idx, 1:, :]).pow(2).sum()
+
+    def forward(self, x, shift=None, subs_idx=None):
+        if self.stop_grad:
+            x = x.detach()
+
+        if self.positive:
+            positive(self.features)
+        self.grid.data = torch.clamp(self.grid.data, -1, 1)
+
+        N, c, t, w, h = x.size()
+        m = self._pool_steps + 1
+        if subs_idx is not None:
+            feat = self.features[..., subs_idx].contiguous()
+            outdims = feat.size(-1)
+            feat = feat.view(1, m * c, outdims)
+            grid = self.grid[:, subs_idx, ...]
+        else:
+            grid = self.grid
+            feat = self.features.view(1, m * c, self.outdims)
+            outdims = self.outdims
+        if shift is None:
+            grid = grid.expand(N * t, outdims, self._grid_points, 2)
+        else:
+            grid = grid.expand(N, outdims, self._grid_points, 2)
+            grid = torch.stack([grid + shift[:, i, :][:, None, None, :] for i in range(t)], 1)
+            grid = grid.contiguous().view(-1, outdims, self._grid_points, 2)
+        z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
+        pools = [F.grid_sample(z, grid).mean(dim=3, keepdim=True)]
+        for i in range(self._pool_steps):
+            z = self.avg(z)
+            pools.append(F.grid_sample(z, grid).mean(dim=3, keepdim=True))
+        y = torch.cat(pools, dim=1)
+        y = (y.squeeze(-1) * feat).sum(1).view(N, t, outdims)
+
+        if self.bias is not None:
+            if subs_idx is None:
+                y = y + self.bias
+            else:
+                y = y + self.bias[subs_idx]
+
+        return y
+
+    def __repr__(self):
+        c, _, w, h = self.in_shape
+        r = self.__class__.__name__ + \
+            ' (' + '{} x {} x {}'.format(c, w, h) + ' -> ' + str(self.outdims) + ')'
+        if self.bias is not None:
+            r += ' with bias'
+        if self.stop_grad:
+            r += ', stop_grad=True'
+        r += '\n'
+
+        for ch in self.children():
+            r += '  -> ' + ch.__repr__() + '\n'
+        return r
 
 
 class ExtendedConv2d(nn.Conv2d):
@@ -822,6 +930,16 @@ class ExtendedConv2d(nn.Conv2d):
 
         super().__init__(in_channels, out_channels, kernel_size, stride=stride,
                          padding=padding, groups=groups, bias=bias)
+
+
+class DepthSeparableConv2d(nn.Sequential):
+
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, bias=True):
+        super().__init__()
+        self.add_module('in_depth_conv', nn.Conv2d(in_channels, out_channels, 1, bias=bias))
+        self.add_module('spatial_conv', nn.Conv2d(out_channels, out_channels, kernel_size, stride=1, padding=padding,
+                                                  dilation=dilation, bias=bias, groups=out_channels))
+        self.add_module('out_depth_conv', nn.Conv2d(out_channels, out_channels, 1, bias=bias))
 
 
 class ConstrainedConv2d(ExtendedConv2d):
@@ -972,19 +1090,17 @@ class Pyramid(nn.Module):
 
     }
 
-    def __init__(self, scale_n=4, type='gauss5x5', downsample=True, _skip_upsampling=False):
+    def __init__(self, scale_n=4, type='gauss5x5', downsample=True):
         """
         Setup Laplace image pyramid
         Args:
             scale_n: number of Laplace pyramid layers to construct
             type: type of Gaussian filter used in pyramid construction. Valid options are: 'gauss5x5', 'gauss3x3', and 'laplace5x5'
             downsample: whether to downsample the image in each layer. Defaults to True
-            _skip_upsampling: Present for legacy reasons. Set to False (default) to get correct behavior.
         """
         super().__init__()
         self.type = type
         self.downsample = downsample
-        self._skip_upsampling = _skip_upsampling
         h = self._filter_dict[type]
         self.register_buffer('filter', torch.from_numpy(h))
         self.scale_n = scale_n
@@ -997,7 +1113,7 @@ class Pyramid(nn.Module):
         if self._filter_cache is not None and self._filter_cache.size(0) == c:
             filter = self._filter_cache
         else:
-            filter = Variable(self.filter.expand(c, 1, self._kern, self._kern)).contiguous()
+            filter = self.filter.expand(c, 1, self._kern, self._kern).contiguous()
             self._filter_cache = filter
 
         # the necessary output padding depends on even/odd of the dimension
@@ -1006,17 +1122,14 @@ class Pyramid(nn.Module):
         smooth = F.conv2d(img, filter, padding=self._pad, groups=c)
         if self.downsample:
             lo = smooth[:, :, ::2, ::2]
-            if self._skip_upsampling:
-                lo2 = smooth
-            else:
-                lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding, groups=c)
+            lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding,
+                                         groups=c)
         else:
             lo = lo2 = smooth
 
         hi = img - lo2
 
         return lo, hi
-
 
     def forward(self, img):
         levels = []
@@ -1027,5 +1140,140 @@ class Pyramid(nn.Module):
         return levels
 
     def __repr__(self):
-        return "Pyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample}, _skip_upsampling={_skip_upsampling}, type={type})".format(
+        return "Pyramid(scale_n={scale_n}, padding={_pad}, downsample={downsample}, type={type})".format(
             **self.__dict__)
+
+
+class RotEquiConv2d(nn.Module):
+
+    def __init__(self, in_features, out_features, num_rotations, kernel_size,
+                 padding=0, bias=True, momentum=0.1, upsampling=2, first_layer=False):
+        super().__init__()
+
+        if not first_layer:
+            in_features *= num_rotations
+
+        self._batch_norm = nn.BatchNorm3d(out_features, momentum=momentum, affine=False)
+
+        H, self.desc, self.mu = hermite_2d(kernel_size, kernel_size * upsampling, 2 * np.sqrt(kernel_size))
+        self.register_buffer('hermite_basis', torch.FloatTensor(H))
+
+        n_coeffs = kernel_size * (kernel_size + 1) // 2
+        self.coeffs = Parameter(torch.FloatTensor(size=(n_coeffs, in_features, out_features)).normal_(std=0.1))
+
+        self.bias = Parameter(torch.FloatTensor(size=(1, out_features, 1, 1, 1)).zero_()) if bias else None
+
+        self.num_rotations = num_rotations
+        self.out_features = out_features
+        self.first_layer = first_layer
+        self.padding = padding
+
+
+    @property
+    def raw_weights(self):
+        return torch.einsum('ijk,ilm->mljk', (self.hermite_basis, self.coeffs))
+
+    @property
+    def pooled_raw_weights(self):
+        return F.avg_pool2d(self.raw_weights, stride=2, kernel_size=2)
+
+    @property
+    def weights(self):
+        return rotate_weights_hermite(self.hermite_basis, self.desc, self.mu, self.coeffs, self.num_rotations,
+                                        first_layer=self.first_layer)
+
+
+    @property
+    def pooled_weights(self):
+        return F.avg_pool2d(self.weights, stride=2, kernel_size=2)
+
+    def forward(self, input):
+        x = F.conv2d(input, self.pooled_weights, padding=self.padding)
+        N, c, *spatial = x.shape
+        x = x.view(N, self.out_features, self.num_rotations, *spatial)
+        x = self._batch_norm(x)
+        if self.bias is not None:
+            x = x + self.bias
+        return x.view(N, c, *spatial)
+
+
+
+class MaxMin(nn.Module):
+    def __init__(self, axis=-1):
+        super(MaxMinGroup, self).__init__()
+        self.axis = axis
+
+    def forward(self, x):
+        maxes = maxout_by_group(x, 2, self.axis)
+        mins = minout_by_group(x, 2, self.axis)
+        maxmin = torch.cat((maxes, mins), dim=1)
+        return maxmin
+
+    def extra_repr(self):
+        return 'group_size: {}'.format(2)
+
+class GroupSort(nn.Module):
+
+    def __init__(self, group_size, axis=-1):
+        super(GroupSort, self).__init__()
+        self.group_size = group_size
+        self.axis = axis
+
+    def forward(self, x):
+        group_sorted = group_sort(x, self.group_size, self.axis)
+        # assert check_group_sorted(group_sorted, self.group_size, axis=self.axis) == 1, "GroupSort failed. "
+
+        return group_sorted
+
+    def extra_repr(self):
+        return 'num_groups: {}'.format(self.num_units)
+
+
+def process_group_size(x, group_size, axis=-1):
+    size = list(x.size())
+    num_channels = size[axis]
+
+    if num_channels % group_size:
+        raise ValueError('number of features({}) is not a '
+                         'multiple of group_size({})'.format(num_channels, num_units))
+    size[axis] = -1
+    if axis == -1:
+        size += [group_size]
+    else:
+        size.insert(axis+1, group_size)
+    return size
+
+
+def group_sort(x, group_size, axis=-1):
+    size = process_group_size(x, group_size, axis)
+    grouped_x = x.view(*size)
+    sort_dim = axis if axis == -1 else axis + 1
+    sorted_grouped_x, _ = grouped_x.sort(dim=sort_dim)
+    sorted_x = sorted_grouped_x.view(*list(x.shape))
+
+    return sorted_x
+
+def maxout_by_group(x, group_size, axis=-1):
+    size = process_group_size(x, group_size, axis)
+    sort_dim = axis if axis == -1 else axis + 1
+    return torch.max(x.view(*size), sort_dim)[0]
+
+
+def minout_by_group(x, group_size, axis=-1):
+    size = process_group_size(x, group_size, axis)
+    sort_dim = axis if axis == -1 else axis + 1
+    return torch.min(x.view(*size), sort_dim)[0]
+
+
+def check_group_sorted(x, group_size, axis=-1):
+    size = process_group_size(x, group_size, axis)
+
+    x_np = x.cpu().data.numpy()
+    x_np = x_np.reshape(*size)
+    x_np_diff = np.diff(x_np, axis=axis)
+
+    # Return 1 iff all elements are increasing.
+    if np.sum(x_np_diff < 0) > 0:
+        return 0
+    else:
+        return 1
