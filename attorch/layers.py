@@ -624,7 +624,7 @@ class SpatialTransformerPooled3d(nn.Module):
         else:
             self.grid = grid
         self.features = Parameter(torch.Tensor(1, c * (self._pool_steps + 1), 1, outdims))
-        self.register_buffer('mask', 0 * self.features.data + 1)
+        self.register_buffer('mask', torch.ones_like(self.features))
 
         if bias:
             bias = Parameter(torch.Tensor(outdims))
