@@ -29,12 +29,13 @@ class Laplace(nn.Module):
     Laplace filter for a stack of data.
     """
 
-    def __init__(self):
+    def __init__(self, padding=0):
         super().__init__()
+        self._padding = padding
         self.register_buffer('filter', torch.from_numpy(laplace()))
 
     def forward(self, x):
-        return F.conv2d(x, self.filter, bias=None)
+        return F.conv2d(x, self.filter, padding=self._padding, bias=None)
 
 
 class Laplace3d(nn.Module):
@@ -55,13 +56,15 @@ class LaplaceL2(nn.Module):
     Laplace regularizer for a 2D convolutional layer. 
     """
 
-    def __init__(self):
+    def __init__(self, padding=0):
         super().__init__()
-        self.laplace = Laplace()
+        self.laplace = Laplace(padding=padding)
 
-    def forward(self, x):
+    def forward(self, x, weights=None):
         ic, oc, k1, k2 = x.size()
-        return self.laplace(x.view(ic * oc, 1, k1, k2)).pow(2).mean() / 2
+        if weights is None:
+            weights = 1.0
+        return (self.laplace(x.view(ic * oc, 1, k1, k2)).view(ic, oc, k1, k2).pow(2) * weights).mean() / 2
 
 
 class LaplaceL23d(nn.Module):
@@ -98,9 +101,9 @@ class LaplaceL1(nn.Module):
     Laplace regularizer for a 2D convolutional layer.
     """
 
-    def __init__(self):
+    def __init__(self, padding=0):
         super().__init__()
-        self.laplace = Laplace()
+        self.laplace = Laplace(padding=padding)
 
     def forward(self, x):
         ic, oc, k1, k2 = x.size()

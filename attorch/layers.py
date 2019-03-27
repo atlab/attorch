@@ -218,13 +218,13 @@ class SpatialXFeatureLinear(nn.Module):
 
 class SpatialTransformerPyramid2d(nn.Module):
     def __init__(self, in_shape, outdims, scale_n=4, positive=False, bias=True,
-                 init_range=.1, downsample=True, type=None):
+                 init_range=.1, downsample=True, _skip_upsampling=False, type=None):
         super().__init__()
         self.in_shape = in_shape
         c, w, h = in_shape
         self.outdims = outdims
         self.positive = positive
-        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, type=type)
+        self.gauss_pyramid = Pyramid(scale_n=scale_n, downsample=downsample, _skip_upsampling=_skip_upsampling, type=type)
         self.grid = Parameter(torch.Tensor(1, outdims, 1, 2))
         self.features = Parameter(torch.Tensor(1, c * (scale_n + 1), 1, outdims))
 
@@ -1090,7 +1090,7 @@ class Pyramid(nn.Module):
 
     }
 
-    def __init__(self, scale_n=4, type='gauss5x5', downsample=True):
+    def __init__(self, scale_n=4, type='gauss5x5', downsample=True, _skip_upsampling=False):
         """
         Setup Laplace image pyramid
         Args:
@@ -1101,6 +1101,7 @@ class Pyramid(nn.Module):
         super().__init__()
         self.type = type
         self.downsample = downsample
+        self._skip_upsampling = _skip_upsampling
         h = self._filter_dict[type]
         self.register_buffer('filter', torch.from_numpy(h))
         self.scale_n = scale_n
@@ -1122,7 +1123,11 @@ class Pyramid(nn.Module):
         smooth = F.conv2d(img, filter, padding=self._pad, groups=c)
         if self.downsample:
             lo = smooth[:, :, ::2, ::2]
-            lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding,
+            if self._skip_upsampling:
+                # Technically incorrect implementation of the Laplace pyramid
+                lo2 = smooth
+            else:
+                lo2 = 4 * F.conv_transpose2d(lo, filter, stride=2, padding=self._pad, output_padding=output_padding,
                                          groups=c)
         else:
             lo = lo2 = smooth
