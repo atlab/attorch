@@ -1,14 +1,15 @@
-from collections import defaultdict, namedtuple, Mapping
-
 import h5py
-import torch
-from torch.utils.data import Dataset
 import numpy as np
-from torch.autograd import Variable
+import torch
+from collections import defaultdict, namedtuple, Mapping
+from glob import glob
+from torch.utils.data import Dataset
+import os
 
 class Invertible:
     def inv(self, y):
         raise NotImplemented('Subclasses of Invertible must implement an inv method')
+
 
 class DataTransform:
     def initialize(self, dataset):
@@ -47,54 +48,9 @@ class Neurons2Behavior(DataTransform):
         return tuple((item[0], np.hstack((item[1], item[3][~self.idx])), item[2], item[3][self.idx]))
 
 
-class TransformFromFuncs(DataTransform):
-    def __init__(self):
-        super().__init__()
-
-    def initialize(self, dataset):
-        self._transforms = []
-        self.transformees = []
-        for d in dataset.data_keys:
-            if hasattr(dataset, d + '_transform'):
-                self._transforms.append(getattr(dataset, d + '_transform'))
-                self.transformees.append(d)
-            else:
-                self._transforms.append(lambda x: x)
-
-    def __call__(self, item):
-        return tuple(tr(it) for tr, it in zip(self._transforms, item))
-
-    def __repr__(self):
-        return "{}({})".format(self.__class__.__name__, ', '.join(self.transformees))
-
-
 class ToTensor(DataTransform):
     def __call__(self, item):
         return tuple(torch.from_numpy(it) for it in item)
-
-
-class Chain(DataTransform):
-    def __init__(self, *transforms):
-        self.transforms = transforms
-
-    def initialize(self, dataset):
-        for tr in self.transforms:
-            tr.initialize(dataset)
-
-    def __call__(self, item):
-        for tr in self.transforms:
-            item = tr(item)
-        return item
-
-    def __add__(self, other):
-        return Chain(*self.transforms, other)
-
-    def __iadd__(self, other):
-        self.transforms = self.transforms + (other,)
-        return self
-
-    def __repr__(self):
-        return "{}[{}]".format(self.__class__.__name__, ' -> '.join(map(repr, self.transforms)))
 
 
 class H5Dataset(Dataset):
@@ -134,7 +90,67 @@ class H5Dataset(Dataset):
                           for key in self.data_keys] + ['Transforms: ' + repr(self.transform)])
 
 
-class H5SequenceSet(Dataset):
+class TransformDataset(Dataset):
+
+    def transform(self, x, exclude=None):
+        for tr in self.transforms:
+            if exclude is None or not isinstance(tr, exclude):
+                x = tr(x)
+        return x
+
+    def invert(self, x, exclude=None):
+        for tr in reversed(filter(lambda tr: not isinstance(tr, exclude), self.transforms)):
+            if not isinstance(tr, Invertible):
+                raise TypeError('Cannot invert', tr.__class__.__name__)
+            else:
+                x = tr.inv(x)
+        return x
+
+    def __iter__(self):
+        yield from map(self.__getitem__, range(len(self)))
+
+    def __len__(self):
+        return self._len
+
+    def __repr__(self):
+        return '{} m={}:\n\t({})'.format(self.__class__.__name__, len(self), ', '.join(self.data_groups)) \
+               + '\n\t[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) + ']'
+
+
+class NumpyZSet(TransformDataset):
+    def __init__(self, cachedir, *data_groups, transforms=None):
+        self.cachedir = cachedir
+        tmp = np.load(os.path.join(cachedir, '0.npz'))
+        for key in data_groups:
+            assert key in tmp, 'Could not find {} in file'.format(key)
+        self._len = len(glob('{}/[0-9]*.npz'.format(self.cachedir)))
+
+        self.data_groups = data_groups
+
+        self.transforms = transforms or []
+
+        self.data_point = namedtuple('DataPoint', data_groups)
+
+    def __getitem__(self, item):
+        dat = np.load(os.path.join(self.cachedir, '{}.npz'.format(item)))
+        x = self.data_point(*(dat[g] for g in self.data_groups))
+        for tr in self.transforms:
+            x = tr(x)
+        return x
+
+    def __getattr__(self, item):
+        dat = np.load(os.path.join(self.cachedir, 'meta.npz'))
+        if item in dat:
+            item = dat[item]
+            if item.dtype.char == 'S':  # convert bytes to univcode
+                item = item.astype(str)
+            return item
+        else:
+            raise AttributeError('Item {} not found in {}'.format(item, self.__class__.__name__))
+
+
+
+class H5SequenceSet(TransformDataset):
     def __init__(self, filename, *data_groups, transforms=None):
         self._fid = h5py.File(filename, 'r')
 
@@ -153,35 +169,11 @@ class H5SequenceSet(Dataset):
 
         self.data_point = namedtuple('DataPoint', data_groups)
 
-    def transform(self, x, exclude=None):
-        for tr in self.transforms:
-            if exclude is None or not isinstance(tr, exclude):
-                x = tr(x)
-        return x
-
-    def invert(self, x, exclude=None):
-        for tr in reversed(filter(lambda tr: not isinstance(tr, exclude), self.transforms)):
-            if not isinstance(tr, Invertible):
-                raise TypeError('Cannot invert', tr.__class__.__name__)
-            else:
-                x = tr.inv(x)
-        return x
-
     def __getitem__(self, item):
         x = self.data_point(*(np.array(self._fid[g][str(item)]) for g in self.data_groups))
         for tr in self.transforms:
             x = tr(x)
         return x
-
-    def __iter__(self):
-        yield from map(self.__getitem__, range(len(self)))
-
-    def __len__(self):
-        return self._len
-
-    def __repr__(self):
-        return 'H5SequenceSet m={}:\n\t({})'.format(len(self), ', '.join(self.data_groups)) \
-             + '\n\t[Transforms: ' + '->'.join([repr(tr) for tr in self.transforms]) +']'
 
     def __getattr__(self, item):
         if item in self._fid:
@@ -194,119 +186,3 @@ class H5SequenceSet(Dataset):
             return item
         else:
             raise AttributeError('Item {} not found in {}'.format(item, self.__class__.__name__))
-
-
-class MultiTensorDataset(Dataset):
-    """Dataset wrapping data and target tensors.
-    Each sample will be retrieved by indexing both tensors along the first
-    dimension and converted into a the according dtype.
-    
-    Arguments:
-        *data (numpy arrays): datasets
-        data_dtype               : dtype of the tensors (for cuda conversion)
-    """
-
-    def __init__(self, *data, transform=None):
-        for d in data:
-            assert d.shape[0] == data[0].shape[0], 'datasets must have same first dimension'
-        self.data = tuple(torch.from_numpy(d.astype(np.float32)) for d in data)
-        if transform is None:
-            transform = lambda x: x
-        self.transform = transform
-
-    def __getitem__(self, index):
-        ret = tuple(d[index] for d in self.data)
-        return self.transform(ret)
-
-    def mean(self, axis=None):
-        if axis is None:
-            return tuple(d.mean() for d in self.data)
-        else:
-            return tuple(d.mean(axis, keepdim=True) for d in self.data)
-
-    def __len__(self):
-        return self.data[0].size(0)
-
-    def as_variables(self, **kwargs):
-        return tuple(Variable(v, **kwargs) for v in self.data)
-
-    def cuda_(self):
-        self.data = tuple(v.cuda() for v in self.data)
-
-    def cpu_(self):
-        self.data = tuple(v.cpu() for v in self.data)
-
-    def __repr__(self):
-        return '\n'.join(['Tensor {}: {}'.format(i, str(t.size())) for i, t in enumerate(self.data)])
-
-
-class NumpyDataset:
-    """
-    Arguments:
-        *data (numpy arrays): datasets
-    """
-
-    def __init__(self, *data):
-        for d in data:
-            assert d.shape[0] == data[0].shape[0], 'datasets must have same first dimension'
-        self.data = data
-
-    def __getitem__(self, index):
-        return tuple(d[index] for d in self.data)
-
-    def mean(self, axis=None):
-        if axis is None:
-            return tuple(d.mean() for d in self.data)
-        else:
-            return tuple(d.mean(axis) for d in self.data)
-
-    def __len__(self):
-        return self.data[0].shape(0)
-
-    def __repr__(self):
-        return '\n'.join(['Array {}: {}'.format(i, str(t.shape)) for i, t in enumerate(self.data)])
-
-
-def to_variable(iter, cuda=True, filter=None, **kwargs):
-    """
-    Converts output of iter into Variables.
-    
-    Args:
-        iter:       iterator that returns tuples of tensors
-        cuda:       whether the elements should be loaded onto the GPU
-        filter:     tuple of bools as long as the number of returned elements by iter. If filter[i] is False,
-                    the element is not converted.
-        **kwargs:   keyword arguments for the Variable constructor
-    """
-    for elem in iter:
-        if filter is None:
-            filter = (True,) if not isinstance(elem, (tuple, list)) else len(elem) * (True,)
-        if cuda:
-            yield tuple(Variable(e.cuda(), **kwargs) if f else e for f, e in zip(filter, elem))
-        else:
-            yield tuple(Variable(e, **kwargs) if f else e for f, e in zip(filter, elem))
-
-
-class ListDataset(Dataset):
-    """
-    Arguments:
-        *data (indexable): datasets
-    """
-
-    def __init__(self, *data, transform=None):
-        self.transform = transform
-        for d in data:
-            assert len(d) == len(data[0]), 'datasets must have same first dimension'
-        self.data = data
-
-    def __getitem__(self, index):
-        if self.transform is not None:
-            return self.transform(tuple(d[index] for d in self.data))
-        else:
-            return tuple(d[index] for d in self.data)
-
-    def __len__(self):
-        return len(self.data)
-
-    def __repr__(self):
-        return '\n'.join(['List  {}: {}'.format(i, str(len(t))) for i, t in enumerate(self.data)])
