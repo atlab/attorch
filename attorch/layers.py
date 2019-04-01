@@ -1110,7 +1110,7 @@ class Pyramid(nn.Module):
 
     def lap_split(self, img):
         N, c, h, w = img.size()
-        filter = Variable(self.filter.expand(c, 1, self._kern, self._kern))
+        filter = self.filter.expand(c, 1, self._kern, self._kern).contiguous()
 
         # the necessary output padding depends on even/odd of the dimension
         output_padding = (h + 1) % 2, (w + 1) % 2
