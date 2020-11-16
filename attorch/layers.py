@@ -282,7 +282,7 @@ class SpatialTransformerPyramid2d(nn.Module):
         else:
             grid = self.grid.expand(N, self.outdims, 1, 2) + shift[:, None, None, :]
 
-        pools = [F.grid_sample(xx, grid) for xx in self.gauss_pyramid(x)]
+        pools = [F.grid_sample(xx, grid, align_corners=True) for xx in self.gauss_pyramid(x)]
         y = torch.cat(pools, dim=1).squeeze(-1)
         y = (y * feat).sum(1).view(N, self.outdims)
 
@@ -430,10 +430,10 @@ class SpatialTransformerPooled2d(nn.Module):
         else:
             grid = grid.expand(N, outdims, 1, 2) + shift[:, None, None, :]
 
-        pools = [F.grid_sample(x, grid)]
+        pools = [F.grid_sample(x, grid, align_corners=True)]
         for _ in range(self.pool_steps):
             x = self.avg(x)
-            pools.append(F.grid_sample(x, grid))
+            pools.append(F.grid_sample(x, grid, align_corners=True))
         y = torch.cat(pools, dim=1)
         y = (y.squeeze(-1) * feat).sum(1).view(N, outdims)
 
@@ -586,7 +586,7 @@ class SpatialTransformerPyramid3d(nn.Module):
             grid = grid.contiguous().view(-1, self.outdims, 1, 2)
 
         z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
-        pools = [F.grid_sample(x, grid) for x in self.gauss(z)]
+        pools = [F.grid_sample(x, grid, align_corners=True) for x in self.gauss(z)]
         y = torch.cat(pools, dim=1).squeeze(-1)
         y = (y * feat).sum(1).view(N, t, self.outdims)
 
@@ -716,10 +716,10 @@ class SpatialTransformerPooled3d(nn.Module):
             grid = torch.stack([grid + shift[:, i, :][:, None, None, :] for i in range(t)], 1)
             grid = grid.contiguous().view(-1, outdims, 1, 2)
         z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
-        pools = [F.grid_sample(z, grid)]
+        pools = [F.grid_sample(z, grid, align_corners=True)]
         for i in range(self._pool_steps):
             z = self.avg(z)
-            pools.append(F.grid_sample(z, grid))
+            pools.append(F.grid_sample(z, grid, align_corners=True))
         y = torch.cat(pools, dim=1)
         y = (y.squeeze(-1) * feat).sum(1).view(N, t, outdims)
 
@@ -876,10 +876,10 @@ class SpatialTransformerXPooled3d(nn.Module):
             grid = torch.stack([grid + shift[:, i, :][:, None, None, :] for i in range(t)], 1)
             grid = grid.contiguous().view(-1, outdims, self._grid_points, 2)
         z = x.contiguous().transpose(2, 1).contiguous().view(-1, c, w, h)
-        pools = [F.grid_sample(z, grid).mean(dim=3, keepdim=True)]
+        pools = [F.grid_sample(z, grid, align_corners=True).mean(dim=3, keepdim=True)]
         for i in range(self._pool_steps):
             z = self.avg(z)
-            pools.append(F.grid_sample(z, grid).mean(dim=3, keepdim=True))
+            pools.append(F.grid_sample(z, grid, align_corners=True).mean(dim=3, keepdim=True))
         y = torch.cat(pools, dim=1)
         y = (y.squeeze(-1) * feat).sum(1).view(N, t, outdims)
 
